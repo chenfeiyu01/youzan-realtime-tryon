@@ -21,25 +21,35 @@ const port = Number(process.env.PORT || 5173);
 const httpsPort = Number(process.env.HTTPS_PORT || 3443);
 const baseURL = 'https://cloud.xmax.22duck.cn/open/api/v1';
 const publicURL = 'https://chenfeiyu01.github.io/youzan-realtime-tryon/';
+const temporaryKeyLifetimeSeconds = 86400;
+const temporaryKeyPointsLimit = 2147483647;
 let sharedAccess;
 try { sharedAccess = JSON.parse(readFileSync(path.join(root, '.local', 'shared-access.json'), 'utf8')); } catch {}
 async function shareAccess() {
-  if (sharedAccess?.expiresAt > Date.now() + 600000) return sharedAccess;
+  if (sharedAccess?.url) {
+    const cachedURL = new URL(sharedAccess.url);
+    const fragment = new URLSearchParams(cachedURL.hash.slice(1));
+    if (fragment.has('xmax')) {
+      for (const [key, value] of fragment) cachedURL.searchParams.set(key, value);
+      cachedURL.hash = '';
+      sharedAccess.url = cachedURL.href;
+    }
+  }
+  if (sharedAccess?.expiresAt > Date.now() + 600000 && sharedAccess.pointsLimit === temporaryKeyPointsLimit) return sharedAccess;
   const data = await upstream('/temporary-api-key', 'POST', {
-    expireSeconds: 3600, pointsLimit: 60, temporaryApiKeySessionLimit: 1,
+    expireSeconds: temporaryKeyLifetimeSeconds, pointsLimit: temporaryKeyPointsLimit, temporaryApiKeySessionLimit: 1,
   });
   if (!data?.temporaryApiKey?.startsWith('tk-')) throw new Error('未能获取体验凭证');
   const expiresAt = Date.parse(data.expireTimestamp);
   if (!Number.isFinite(expiresAt)) throw new Error('凭证过期时间无效');
   const url = new URL(publicURL);
-  url.hash = new URLSearchParams({ xmax: data.temporaryApiKey, expires: expiresAt, limit: 60 }).toString();
-  sharedAccess = { url: url.href, expiresAt };
+  url.search = new URLSearchParams({ xmax: data.temporaryApiKey, expires: expiresAt, limit: temporaryKeyPointsLimit }).toString();
+  sharedAccess = { url: url.href, expiresAt, pointsLimit: temporaryKeyPointsLimit };
   writeFileSync(path.join(root, '.local', 'shared-access.json'), JSON.stringify(sharedAccess), { mode: 0o600 });
   return sharedAccess;
 }
 const pairingToken = randomBytes(24).toString('hex');
 const sessions = new Map();
-const connectionLimitSeconds = 20;
 const diagnosticsFile = path.join(root, '.local', 'connection-events.jsonl');
 function diagnostic(event, data = {}) {
   try {
@@ -99,11 +109,6 @@ async function revoke(session) {
   })();
   return session.revoking;
 }
-function deadline(session, ms) {
-  clearTimeout(session.timer);
-  session.timer = setTimeout(() => { void revoke(session).catch(() => {}); }, ms);
-  session.timer.unref();
-}
 
 let tlsDir;
 try { tlsDir = prepareCertificates(root); }
@@ -137,7 +142,7 @@ async function handler(req, res) {
     try {
       if (url.pathname === '/api/config' && req.method === 'GET') {
         return json(res, 200, { configured: Boolean(apiKey), model: 'x2.1',
-          phoneURLs: local(req) ? phoneURLs() : [], httpsAvailable: Boolean(tlsDir), durations: [10, 15, 30], connectionLimitSeconds, publicURL });
+          phoneURLs: local(req) ? phoneURLs() : [], httpsAvailable: Boolean(tlsDir), publicURL });
       }
       if (url.pathname === '/api/share-link' && req.method === 'POST' && local(req)) return json(res, 200, await shareAccess());
       if (url.pathname === '/api/diagnostics' && req.method === 'POST') {
@@ -161,22 +166,20 @@ async function handler(req, res) {
       if (url.pathname === '/api/session' && req.method === 'POST') {
         if (shutdown || issuing || sessions.size) return json(res, 409, { error: '已有试衣会话正在运行或关闭，请先停止，稍后再试。' });
         if (!apiKey) return json(res, 503, { error: '请在本地 .env 中配置 XMAX_API_KEY 后重启。' });
-        const { duration } = await body(req);
-        if (![10, 15, 30].includes(duration)) return json(res, 400, { error: '请选择 10、15 或 30 秒。' });
+        await body(req);
         issuing = true;
         try {
           const startedAt = Date.now();
           const data = await upstream('/temporary-api-key', 'POST', {
-            expireSeconds: 180, pointsLimit: duration + connectionLimitSeconds, temporaryApiKeySessionLimit: 1,
+            expireSeconds: temporaryKeyLifetimeSeconds, pointsLimit: temporaryKeyPointsLimit, temporaryApiKeySessionLimit: 1,
           });
           diagnostic('credential', { ms: Date.now() - startedAt });
           if (!data?.temporaryApiKey?.startsWith('tk-')) throw new Error('Xmax 未返回有效临时凭证');
           const session = { id: randomBytes(20).toString('hex'), key: data.temporaryApiKey,
-            duration, expiresAt: Date.now() + 180000, armed: false, playing: false };
+            expiresAt: Date.parse(data.expireTimestamp), armed: false, playing: false };
           sessions.set(session.id, session);
-          deadline(session, 45000); // Abandoned setup cannot retain credentials indefinitely.
           if (res.destroyed || shutdown) { await revoke(session); return; }
-          return json(res, 200, { id: session.id, temporaryApiKey: session.key, duration, connectionLimitSeconds });
+          return json(res, 200, { id: session.id, temporaryApiKey: session.key });
         } finally { issuing = false; }
       }
       const match = url.pathname.match(/^\/api\/session\/([a-f0-9]{40})(\/(?:arm|ready))?$/);
@@ -184,19 +187,18 @@ async function handler(req, res) {
         const session = sessions.get(match[1]);
         if (!session) return json(res, req.method === 'DELETE' || !match[2] ? 200 : 410, { stopped: true, error: '会话已结束，请重新开始' });
         if (req.method === 'POST' && match[2] === '/arm') {
-          if (session.armed) return json(res, 409, { error: '当前会话已开始计时' });
-          session.armed = true; session.connectAt = Date.now(); deadline(session, connectionLimitSeconds * 1000);
+          if (session.armed) return json(res, 409, { error: '当前会话已连接' });
+          session.armed = true; session.connectAt = Date.now();
           diagnostic('armed');
-          return json(res, 200, { connectionLimitSeconds });
+          return json(res, 200, { armed: true });
         }
         if (req.method === 'POST' && match[2] === '/ready') {
           if (!session.armed || session.revoking) return json(res, 409, { error: '会话未连接或正在关闭' });
           if (!session.playing) {
             session.playing = true;
-            deadline(session, session.duration * 1000 + 1500);
             diagnostic('playing', { ms: Date.now() - session.connectAt });
           }
-          return json(res, 200, { duration: session.duration });
+          return json(res, 200, { ready: true });
         }
         if (req.method === 'DELETE' && !match[2]) { await revoke(session); return json(res, 200, { stopped: true }); }
         // sendBeacon uses same-origin POST on pagehide, without relying on async page teardown.

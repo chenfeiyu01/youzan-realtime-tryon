@@ -31,7 +31,7 @@ document.querySelector('#app').innerHTML = `
         <div class="connection-message" id="connection-message" hidden><span class="spinner"></span><span>连接中</span></div>
       </div>
       <div class="controlbar">
-        <div class="session-controls"><select id="duration" aria-label="自动停止时长" title="自动停止时长"><option value="10">10 秒</option><option value="15" selected>15 秒</option><option value="30">30 秒</option></select><span class="countdown" id="countdown" hidden>00:15</span><button id="start-button" class="primary-button" disabled><span>开始试衣</span>${icon('arrow')}</button><button id="stop-button" class="stop-button" hidden><span>停止试衣</span>${icon('stop')}</button></div>
+        <div class="session-controls"><button id="start-button" class="primary-button" disabled><span>开始试衣</span>${icon('arrow')}</button><button id="stop-button" class="stop-button" hidden><span>停止试衣</span>${icon('stop')}</button></div>
       </div>
       <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
     </section>
@@ -64,10 +64,7 @@ let selectionRevision = 0;
 let failedItemId;
 const categoryScroll = new Map();
 let updateQueue = Promise.resolve();
-let timer;
-let deadline = 0;
 let stopping;
-let connectionTimer;
 let updateDebounce;
 let sdkPromise;
 const loadSDK = () => sdkPromise ||= import('@xmaxai/web-sdk');
@@ -106,10 +103,8 @@ function syncControls() {
   $('#stop-button span').textContent = phase === 'stopping' ? '正在停止' : '停止试衣';
   $('#start-button').disabled = !camera || !selected || !config?.configured || cameraBusy || Boolean(session) || phase !== 'idle';
   $('#start-button').title = configurationIssue() || (!camera ? '请先开启摄像头' : '开始试衣');
-  $('#duration').disabled = running || phase === 'stopping';
   $('#switch-camera').disabled = running || phase === 'stopping' || cameraBusy || !camera;
   $('#open-camera').disabled = cameraBusy;
-  $('#countdown').hidden = phase !== 'live';
   updateSelection();
 }
 function updateSelection() {
@@ -204,16 +199,6 @@ async function referenceFor(item, ownClient) {
 }
 function assertCurrent(run) { if (run !== generation || !active() || document.hidden) throw new DOMException('已取消本次试衣', 'AbortError'); }
 function connection() { $('#connection-message').hidden = false; }
-function startCountdown(seconds) {
-  deadline = Date.now() + seconds * 1000;
-  const tick = () => {
-    const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
-    $('#countdown').textContent = `00:${String(remaining).padStart(2, '0')}`;
-    $('#countdown').classList.toggle('ending', remaining <= 5);
-    if (!remaining) void stop('已到设定时长，试衣已停止。');
-  };
-  tick(); timer = setInterval(tick, 200);
-}
 async function start() {
   if (!camera || active() || phase !== 'idle' || session || !selected) return;
   const run = ++generation;
@@ -227,7 +212,7 @@ async function start() {
   try {
     sdk ||= await loadSDK(); assertCurrent(run);
     step = 'credential';
-    issued = await request('/api/session', { method: 'POST', body: JSON.stringify({ duration: Number($('#duration').value) }) });
+    issued = await request('/api/session', { method: 'POST', body: '{}' });
     if (run !== generation || !active() || document.hidden) {
       await request(`/api/session/${issued.id}`, { method: 'DELETE' }); return;
     }
@@ -244,8 +229,7 @@ async function start() {
       if (state.connectionState === sdk.RealtimeConnectionState.generating) {
         phase = 'live'; $('#stage').classList.add('has-output'); $('#connection-message').hidden = true;
         if (!playbackStarted) {
-          playbackStarted = true; clearTimeout(connectionTimer);
-          startCountdown(issued.duration);
+          playbackStarted = true;
           trace('frame', { ms: performance.now() - startedAt });
           void request(`/api/session/${issued.id}/ready`, { method: 'POST', body: '{}' }).catch(error => {
             if (run !== generation) return;
@@ -272,11 +256,6 @@ async function start() {
     outputView.element.style.cssText = 'width:100%;height:100%;background:transparent'; outputView.attach($('#sdk-output'));
     await request(`/api/session/${session.id}/arm`, { method: 'POST', body: '{}' }); assertCurrent(run);
     step = 'connecting'; trace('connect', { ms: performance.now() - startedAt }); connection();
-    connectionTimer = setTimeout(() => {
-      if (run !== generation || playbackStarted) return;
-      trace('error', { stage: 'first_frame_timeout', ms: performance.now() - startedAt });
-      notice('连接超时，请停止后重试', true); void stop('', true);
-    }, issued.connectionLimitSeconds * 1000);
     const result = await manager.startGeneration({ localStream,
       context: new sdk.RealtimeContext({ prompt: initialItem.prompt, referencePath }), faceRestoration: true });
     assertCurrent(run); appliedId = initialItem.id; outputView.track = result.videoTrack; syncControls();
@@ -313,7 +292,7 @@ function queueUpdate() {
 }
 async function stop(message = '试衣已停止。', preserveError = false) {
   if (stopping) return stopping;
-  ++generation; phase = 'stopping'; clearInterval(timer); clearTimeout(connectionTimer); clearTimeout(updateDebounce); timer = undefined; deadline = 0;
+  ++generation; phase = 'stopping'; clearTimeout(updateDebounce);
   const oldManager = manager; const oldSession = session;
   manager = undefined; client = undefined; localStream = undefined;
   outputView?.detach(); outputView = undefined; updateQueue = Promise.resolve();
@@ -401,7 +380,7 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 window.addEventListener('pagehide', () => {
-  ++generation; clearInterval(timer);
+  ++generation;
   if (session && !isHosted) navigator.sendBeacon(`/api/session/${session.id}`, new Blob(['{}'], { type: 'application/json' }));
   void manager?.close().catch(() => {});
   closeCamera(); objectURLs.forEach(url => URL.revokeObjectURL(url));

@@ -7,8 +7,8 @@
 - 结构：`server.mjs` 提供 Vite 中间件、临时密钥 API 与停止控制；`scripts/make-certs.mjs` 生成本地证书；`src/main.js` 管理免费摄像头预览、SDK 会话、换装与清理；`src/style.css` 自适应布局；`src/wardrobe.js` 内置 16 件参考服饰；`public/garments/` 为本地图片。
 - 接入：Xmax 中国区，`@xmaxai/web-sdk` 1.1.3，`RealtimeModel.x2_1`，官方临时 Key 接口、`createExternalVideoStream` 复用本地摄像头轨道、`createStorageService().uploadImage` 上传商品图、`XmaxRealtimeVideoView` 展示生成画面。
 - 凭据：用户提供的永久 Key 仅存于忽略的 `.env`，不复制到前端；客户端获取有效期和额度受限的临时 Key。不要在日志、回答、Git 或归档里包含真实 Key。
-- 交互：实际换装首帧显示后倒计时，默认 15 秒、10 / 30 秒可选；连接等待单独限时 20 秒。切衣不重置体验倒计时。后台切换停止生成。
-- 额度：一次只允许一个会话；积分上限为体验时长 + 20（默认最多 35 积分），连接等待可能计费。准备阶段限时 45 秒，`/arm` 启动首帧等待保护，`/ready` 仅首次启动体验保护。服务端截止比客户端多留 1.5 秒供 SDK 清理。无自动生成重试。
+- 交互：由用户手动停止，无时长选择、倒计时或首帧等待限时；切衣不重启会话。页面隐藏或关闭仍停止并释放摄像头。
+- 额度：用户明确要求移除试玩时限及人工配额。临时 Key 有效 24 小时、API 必填 pointsLimit 设为 2147483647（不再人为限制短时体验），并发 1；实际消费受 Xmax 账户余额与上游规则约束，不充值、不自动重试生成。后台仅在手动停止、页面离开或进程退出时停用 Key，失败会重试停用。
 - 性能：默认采集 1280×720 / 720×1280、20 fps、最大 24 fps，上行码率 300–1600 kbps；提前加载 SDK，保留自动质量调整。输出容器不再 visibility:hidden，移除冗余隐藏视频播放器；SDK 自行处理首帧预热。
 - 布局：PC 和手机均采用全高大画面 + 右侧窄服饰栏，控制按钮浮于画面下角。主画面不被下方衣橱挤占。
 - 诊断：`.local/connection-events.jsonl` 仅记录阶段耗时和数值错误码，无密钥、商品图或摄像头画面。未取得真实失败日志，网络失败与卡顿原因仍待用户实测证据。
@@ -20,9 +20,9 @@
 - Repository: https://github.com/chenfeiyu01/youzan-realtime-tryon
 - Pages: https://chenfeiyu01.github.io/youzan-realtime-tryon/
 - Source branch: main. Build output branch: gh-pages. Build: npm run build.
-- Hosted runtime: src/runtime.js uses a limited temporary token delivered only in the URL fragment; no permanent credential is in source or build output. Fragment is removed after import and retained only in browser sessionStorage.
-- Demo access: one-hour expiry, shared 60-credit cap, one concurrent session; .local/shared-access.json is local only and ignored. Do not commit or log its URL.
-- On static Pages there is no independent server watchdog or per-session token revocation; SDK close, frontend timers, token expiry and shared provider quota bound usage. Local runtime retains the backend watchdog.
+- Hosted runtime: src/runtime.js accepts temporary authorization in URL query parameters and legacy fragments. Valid credentials persist in both sessionStorage and localStorage; current URL retains query authorization so opening in another browser carries it. No permanent credential is in source or build output; referrer policy is no-referrer.
+- Demo access: 24-hour provider credential, no short-demo point cap, one concurrent session. .local/shared-access.json is ignored; its URL must not be committed. Browser URL includes the temporary bearer token; only share the intended experience link.
+- On static Pages there is no persistent backend or token refresh. Manual stop closes the SDK; leaving the page closes camera/generation. Provider balance, credential expiry and upstream failures can still end a session. No frontend playback or connection countdown remains.
 - The desktop phone button can issue or reuse a limited public Pages link. No certificate or same-Wi-Fi requirement for the hosted page.
 - Publication build and credential-exclusion scan completed; no webcam or generation test performed. Issuing demo credentials is an operational action, not a generation call.
 - Portrait fix: src/camera.js identifies touch-device orientation instead of relying on page width, requests aspectRatio/crop-and-scale, and normalizes portrait video pixels to 720x1280 through a local canvas stream. Local preview and Xmax input share that stream and explicit format; fallback uses actual videoWidth/videoHeight rather than sensor settings. Cleanup releases canvas frame callbacks and the raw camera. No webcam or model testing performed.
@@ -31,4 +31,4 @@
 - Collection expanded from 8 to 16: shirts, cotton jacket, leather jacket, dress, suit, and shoes from DummyJSON and Fake Store API demo catalogs, stored as local compressed JPGs. No inference used to prepare assets.
 - Back-view assessment: installed SDK 1.1.3 RealtimeContextInit exposes one referencePath, not independent front/back inputs. Turning footage may produce inferred backs but correctness is unverified, especially prints, pockets, and closures. Do not promise accurate back reconstruction or add a misleading automatic back-view switch. Product-accurate back views need corresponding source views and verified model support.
 
-- Access-link correction: a bare Pages URL cannot authorize a new tab or phone; temporary links expire after one hour. Deliver the complete fragment-bearing link or its QR for try-on. Hosted config now distinguishes missing/expired access. Camera opening and garment selection preserve the necessary authorization error instead of silently clearing it; disabled start button has an explanatory title. No inference performed for this fix.
+- Access-link correction: query-based links fix the fragile fragment/session-only transfer. Blank links still need authorization; preserve missing/expired error messages after camera opening and garment selection. Isolated authorization checks use fake tokens and forbid network; no camera or inference tests.
