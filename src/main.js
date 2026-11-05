@@ -1,9 +1,11 @@
 import './style.css';
+import './couture.css';
 import { categories, wardrobe, categoryPrompts } from './wardrobe.js';
 import { apiRequest, isHosted } from './runtime.js';
 import { createCameraSource } from './camera.js';
 import { modelOptions, modelFor, MAX_VIEWS } from './models.js';
 import { createProviderSession, preloadProvider } from './providers.js';
+const DEFAULT_MODEL = 'xmax-2.1';
 
 const icons = {
   compare: '<rect x="3" y="4" width="7" height="16"/><path d="M14 4h7v16h-7M17.5 9v6M14.5 12h6"/>',
@@ -22,15 +24,16 @@ const icons = {
 const icon = (name, cls = '') => `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
 document.querySelector('#app').innerHTML = `
   <header class="header">
-    <div class="header-actions"><button class="icon-button" id="add-view" aria-label="添加对比窗口" title="添加对比窗口">${icon('compare')}</button><button class="icon-button" id="new-window" aria-label="打开独立窗口" title="打开独立窗口">${icon('window')}</button></div>
+    <div class="header-actions" hidden aria-hidden="true"><button class="icon-button" id="add-view" aria-label="添加对比窗口" title="添加对比窗口">${icon('compare')}</button><button class="icon-button" id="new-window" aria-label="打开独立窗口" title="打开独立窗口">${icon('window')}</button></div>
     <a class="brand" href="${location.href}" aria-label="有赞实时换装首页"><h1>有赞<span>实时换装</span></h1></a>
     <button class="icon-button" id="phone-button" aria-label="手机访问" title="手机访问">${icon('phone')}</button>
   </header>
   <main class="workspace">
-    <section class="fitting" id="fitting" aria-label="实时试衣画面对比">
+    <section class="fitting" id="fitting" aria-label="实时试衣画面">
       <div class="views" id="views"></div>
-      <div class="empty-state" id="empty-state"><button id="open-camera" class="light-button"><span>开启摄像头</span>${icon('arrow')}</button></div>
-      <div class="controlbar"><button class="stage-tool" id="switch-camera" aria-label="切换前后摄像头" title="切换前后摄像头" disabled>${icon('switch')}</button><div class="session-controls"><button id="start-button" class="primary-button" disabled><span>开始试衣</span>${icon('arrow')}</button><button id="stop-button" class="stop-button" hidden><span>停止试衣</span>${icon('stop')}</button></div></div>
+      <div class="empty-state" id="empty-state"><button id="open-camera" class="light-button">${icon('camera')}<span>打开摄像头</span></button></div>
+      <div class="fitting-actions"><button class="stage-tool" id="switch-camera" aria-label="切换前后摄像头" title="切换前后摄像头" disabled>${icon('switch')}</button></div>
+      <div class="controlbar"><div class="session-controls"><button id="start-button" class="primary-button" disabled>${icon('hanger')}<span>开始试衣</span></button><button id="stop-button" class="stop-button" hidden>${icon('stop')}<span>停止试衣</span></button></div></div>
       <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
     </section>
     <aside class="wardrobe" aria-label="服饰选择">
@@ -108,7 +111,7 @@ function addPane(modelId) {
   if (panes.length >= MAX_VIEWS) return;
   const model = modelFor(modelId) || modelOptions[0];
   const element = document.createElement('div'); element.className = 'stage model-pane';
-  element.innerHTML = `<video class="camera-preview" autoplay playsinline muted aria-label="本地摄像头画面"></video><div class="sdk-output"></div><div class="pane-heading"><select class="model-select" aria-label="选择此窗口的模型"></select><div class="pane-actions"><button class="pane-toggle" aria-label="开始此窗口">${icon('play')}</button><button class="pane-remove" aria-label="关闭此窗口">${icon('close')}</button></div></div><div class="connection-message" hidden><span class="spinner"></span><span>连接中</span></div><p class="pane-error" role="status" hidden></p>`;
+  element.innerHTML = `<video class="camera-preview" autoplay playsinline muted aria-label="本地摄像头画面"></video><div class="sdk-output"></div><div class="pane-heading" hidden aria-hidden="true"><select class="model-select" aria-label="选择此窗口的模型"></select><div class="pane-actions"><button class="pane-toggle" aria-label="开始此窗口">${icon('play')}</button><button class="pane-remove" aria-label="关闭此窗口">${icon('close')}</button></div></div><div class="connection-message" hidden><span class="spinner"></span><span>连接中</span></div><p class="pane-error" role="status" hidden></p>`;
   const pane = { model, element, select: element.querySelector('select'), preview: element.querySelector('.camera-preview'), output: element.querySelector('.sdk-output'), toggle: element.querySelector('.pane-toggle'), remove: element.querySelector('.pane-remove'), status: element.querySelector('.connection-message'), error: element.querySelector('.pane-error'), phase: 'idle', run: 0, ready: false, queue: Promise.resolve() };
   for (const option of modelOptions) { const el = document.createElement('option'); el.value = option.id; el.textContent = option.label; pane.select.append(el); }
   pane.select.value = model.id;
@@ -243,7 +246,7 @@ $('#open-camera').onclick = openCamera;
 $('#start-button').onclick = () => { for (const pane of panes) if (!busy(pane) && configured(pane)) void startPane(pane); };
 $('#stop-button').onclick = () => { for (const pane of panes) if (busy(pane)) void stopPane(pane); };
 $('#switch-camera').onclick = async () => { if (!active()) { cameraFacing = cameraFacing === 'user' ? 'environment' : 'user'; await openCamera(); } };
-$('#add-view').onclick = () => addPane(panes.some(p => p.model.provider === 'xmax') ? 'decart-vton-3.6' : 'xmax-2.1');
+$('#add-view').onclick = () => addPane(DEFAULT_MODEL);
 $('#new-window').onclick = () => {
   const url = new URL(location.href); url.searchParams.set('model', panes[0].model.id); url.searchParams.set('item', selected.id);
   url.searchParams.set('room', syncRoom);
@@ -336,7 +339,7 @@ const initial = new URLSearchParams(location.search);
 let remembered;
 try { remembered = localStorage.getItem('youzan-selected-item'); } catch {}
 selected = wardrobe.find(item => item.id === (initial.get('item') || remembered)) || wardrobe[0]; category = selected.category;
-renderWardrobe(); addPane(initial.get('model') || 'xmax-2.1');
+renderWardrobe(); addPane(DEFAULT_MODEL);
 try {
   clothingChannel = new BroadcastChannel(`youzan-fitting-${syncRoom}`);
   clothingChannel.onmessage = ({ data }) => {
