@@ -27,11 +27,11 @@ document.querySelector('#app').innerHTML = `
         <video id="camera-preview" autoplay playsinline muted aria-label="本地摄像头画面"></video>
         <div class="sdk-output" id="sdk-output" aria-label="AI 实时换装画面"></div>
         <div class="stage-top"><span class="stage-status" id="stage-status" hidden><i></i></span><button class="stage-tool" id="switch-camera" aria-label="切换前后摄像头" title="切换前后摄像头" disabled>${icon('switch')}</button></div>
-        <div class="empty-state" id="empty-state"><button id="open-camera" class="light-button">${icon('camera')}开启摄像头</button></div>
+        <div class="empty-state" id="empty-state"><button id="open-camera" class="light-button"><span>开启摄像头</span>${icon('arrow')}</button></div>
         <div class="connection-message" id="connection-message" hidden><span class="spinner"></span><span>连接中</span></div>
       </div>
       <div class="controlbar">
-        <div class="session-controls"><select id="duration" aria-label="自动停止时长" title="自动停止时长"><option value="10">10 秒</option><option value="15" selected>15 秒</option><option value="30">30 秒</option></select><span class="countdown" id="countdown" hidden>00:15</span><button id="start-button" class="primary-button" disabled>${icon('play')}<span>开始试衣</span></button><button id="stop-button" class="stop-button" hidden>${icon('stop')}<span>停止试衣</span></button></div>
+        <div class="session-controls"><select id="duration" aria-label="自动停止时长" title="自动停止时长"><option value="10">10 秒</option><option value="15" selected>15 秒</option><option value="30">30 秒</option></select><span class="countdown" id="countdown" hidden>00:15</span><button id="start-button" class="primary-button" disabled><span>开始试衣</span>${icon('arrow')}</button><button id="stop-button" class="stop-button" hidden><span>停止试衣</span>${icon('stop')}</button></div>
       </div>
       <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
     </section>

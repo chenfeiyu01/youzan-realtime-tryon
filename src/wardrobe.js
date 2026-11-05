@@ -4,10 +4,10 @@ const topPrompt = '将参考图的上衣穿到视频人物身上，其他保持�
 const bottomPrompt = '将参考图的下装穿到视频人物身上，其他保持不变';
 export const categories = [ ['tops', '上衣'], ['bottoms', '裤装'], ['outfits', '套装'], ['shoes', '鞋履'] ];
 export const wardrobe = [
-  { id: 'collection-86', category: 'tops', name: '短袖衬衫', image: asset('collection-86.jpg'), prompt: topPrompt },
-  { id: 'collection-85', category: 'tops', name: '格纹衬衫', image: asset('collection-85.jpg'), prompt: topPrompt },
   { id: 'collection-3', category: 'tops', name: '棉质夹克', image: asset('collection-3.jpg'), prompt: topPrompt },
   { id: 'collection-16', category: 'tops', name: '机车皮衣', image: asset('collection-16.jpg'), prompt: topPrompt },
+  { id: 'collection-86', category: 'tops', name: '短袖衬衫', image: asset('collection-86.jpg'), prompt: topPrompt },
+  { id: 'collection-85', category: 'tops', name: '格纹衬衫', image: asset('collection-85.jpg'), prompt: topPrompt },
   { id: 'top-1', category: 'tops', name: '上衣 · 01', detail: 'Xmax 官方参考款', image: asset('clothx_image6.jpg'), remote: official('clothx_image6.png'), prompt: topPrompt },
   { id: 'top-2', category: 'tops', name: '上衣 · 02', detail: 'Xmax 官方参考款', image: asset('clothx_image7.jpg'), remote: official('clothx_image7.png'), prompt: topPrompt },
   { id: 'bottom-1', category: 'bottoms', name: '裤装 · 01', detail: 'Xmax 官方参考款', image: asset('clothx_image8.jpg'), remote: official('clothx_image8.png'), prompt: bottomPrompt },
