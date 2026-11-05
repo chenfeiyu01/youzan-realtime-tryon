@@ -50,7 +50,11 @@ PC HTTP 只监听回环地址；手机 HTTPS 监听局域网，扫码配对后�
 
 ## 预设素材
 
-内置 8 张参考图：2 件上衣、2 件裤装、2 套服装、2 双鞋。上衣、裤装与套装取自 Xmax 官方示例参考素材，保留官方专用提示词；鞋履取自 DummyJSON 商品演示数据。它们用于本地体验，非有赞在售商品。页面也支持上传 JPG / PNG / WebP 自有商品图，最多 10 MB。
+内置 16 张参考图：6 件上衣、2 件裤装、4 套服装、4 双鞋。原有上衣、裤装与套装取自 Xmax 官方示例；新增衬衫、夹克、皮衣、礼服、套装及鞋履取自 DummyJSON 与 Fake Store API 商品演示数据。它们用于体验，非有赞在售商品。支持上传 JPG / PNG / WebP 自有商品图，最多 10 MB。
+
+页面参考 The Row 的克制留白、Loro Piana 的暖色与细线，保留原有布局。切衣不重新构建列表，保留分类滚动位置；应用中的服饰用小进度环表示。
+
+关于背面：当前接入的 SDK 只有单张参考图字段。转身后的背部细节由模型推断，不保证与真实商品一致。前端不能从缺失的商品背面素材还原准确的印花、口袋或拉链；需要真实多视图素材及经过验证的模型支持。
 
 本地选择文件只生成浏览器预览；开始试衣或进行中的会话切换到该文件时，才经 SDK 上传到 Xmax 对象存储。上传得到的 URL 仅在本页面内存中缓存。刷新页面即丢失本次自定义衣橱，不做额外账号或云端衣橱。
 
@@ -59,6 +63,9 @@ PC HTTP 只监听回环地址；手机 HTTPS 监听局域网，扫码配对后�
 - https://platform.xmaxai.com/docs/authentication
 - https://github.com/Xmax-AI/XmaxSDK-Web
 - https://dummyjson.com/products
+- https://fakestoreapi.com/
+- https://www.therow.com/
+- https://us.loropiana.com/en/
 
 ## 交付状态
 

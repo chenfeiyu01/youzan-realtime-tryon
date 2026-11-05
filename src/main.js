@@ -18,7 +18,7 @@ const icons = {
 const icon = (name, cls = '') => `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
 document.querySelector('#app').innerHTML = `
   <header class="header">
-    <a class="brand" href="/" aria-label="有赞实时换装首页"><h1>有赞实时换装</h1></a>
+    <a class="brand" href="${import.meta.env.BASE_URL}" aria-label="有赞实时换装首页"><h1>有赞<span>实时换装</span></h1></a>
     <button class="icon-button" id="phone-button" aria-label="手机访问" title="手机访问">${icon('phone')}</button>
   </header>
   <main class="workspace">
@@ -61,6 +61,8 @@ let session;
 let phase = 'idle';
 let generation = 0;
 let selectionRevision = 0;
+let failedItemId;
+const categoryScroll = new Map();
 let updateQueue = Promise.resolve();
 let timer;
 let deadline = 0;
@@ -89,6 +91,7 @@ function errorText(error) {
   return raw.replace(/(?:uk|tk)-[a-zA-Z0-9_-]+/g, '[密钥已隐藏]').slice(0, 240);
 }
 function syncControls() {
+  $('#app').dataset.state = phase;
   const running = active();
   $('#start-button').hidden = running || phase === 'stopping';
   $('#stop-button').hidden = !running && phase !== 'stopping';
@@ -99,22 +102,46 @@ function syncControls() {
   $('#switch-camera').disabled = running || phase === 'stopping' || cameraBusy || !camera;
   $('#open-camera').disabled = cameraBusy;
   $('#countdown').hidden = phase !== 'live';
+  updateSelection();
+}
+function updateSelection() {
+  for (const button of $('#garments').children) {
+    const chosen = button.dataset.itemId === selected?.id;
+    const pending = chosen && active() && selected.id !== appliedId && selected.id !== failedItemId;
+    button.classList.toggle('selected', chosen);
+    button.classList.toggle('is-applying', pending);
+    button.setAttribute('aria-pressed', String(chosen));
+    button.setAttribute('aria-busy', String(pending));
+  }
 }
 function renderWardrobe() {
-  $('#categories').replaceChildren(...categories.map(([key, label]) => {
+  if (!$('#categories').children.length) {
+    $('#categories').replaceChildren(...categories.map(([key, label]) => {
+      const button = document.createElement('button'); button.textContent = label; button.dataset.category = key;
+      button.onclick = () => {
+        if (category === key) return;
+        categoryScroll.set(category, $('#garments').scrollTop);
+        category = key; renderWardrobe();
+      };
+      return button;
+    }));
+  }
+  for (const button of $('#categories').children) {
+    const chosen = button.dataset.category === category;
+    button.classList.toggle('selected', chosen); button.setAttribute('aria-pressed', String(chosen));
+  }
+  $('#garments').replaceChildren(...wardrobe.filter(item => item.category === category).map((item, index) => {
     const button = document.createElement('button');
-    button.textContent = label; button.className = key === category ? 'selected' : '';
-    button.setAttribute('aria-pressed', String(key === category));
-    button.onclick = () => { category = key; renderWardrobe(); };
-    return button;
-  }));
-  $('#garments').replaceChildren(...wardrobe.filter(item => item.category === category).map(item => {
-    const button = document.createElement('button');
+    button.dataset.itemId = item.id;
+    button.style.setProperty('--arrival', `${Math.min(index, 5) * 25}ms`);
     button.className = `garment ${item.id === selected?.id ? 'selected' : ''}`;
     button.setAttribute('aria-pressed', String(item.id === selected?.id));
     button.setAttribute('aria-label', `试穿${item.name}`);
     const picture = document.createElement('div'); picture.className = 'garment-picture';
     const image = document.createElement('img'); image.src = item.image; image.alt = item.name; image.loading = 'lazy';
+    image.decoding = 'async';
+    image.onload = () => picture.classList.add('is-loaded');
+    if (image.complete && image.naturalWidth) picture.classList.add('is-loaded');
     image.onerror = () => { if (item.remote && image.src !== item.remote) image.src = item.remote; else picture.classList.add('image-unavailable'); };
     const mark = document.createElement('span'); mark.className = 'selection-mark'; mark.innerHTML = icon('check');
     picture.append(image, mark);
@@ -123,9 +150,12 @@ function renderWardrobe() {
     button.onclick = () => selectItem(item);
     return button;
   }));
+  $('#garments').scrollTop = categoryScroll.get(category) || 0;
+  updateSelection();
 }
 function selectItem(item) {
-  selected = item; ++selectionRevision; renderWardrobe(); syncControls();
+  if (selected?.id === item.id && selected.id !== failedItemId) return;
+  selected = item; failedItemId = undefined; ++selectionRevision; syncControls();
   if (phase === 'live') { clearTimeout(updateDebounce); updateDebounce = setTimeout(queueUpdate, 180); }
   else notice('');
 }
@@ -260,10 +290,11 @@ function queueUpdate() {
       const result = await currentManager.startGeneration({ localStream,
         context: new sdk.RealtimeContext({ prompt: item.prompt, referencePath }), faceRestoration: true });
       if (run !== generation || phase !== 'live') return;
-      outputView.track = result.videoTrack; appliedId = item.id;
+      outputView.track = result.videoTrack; appliedId = item.id; failedItemId = undefined;
       if (revision === selectionRevision) notice('');
     } catch (error) {
       if (run === generation && active()) {
+        failedItemId = item.id;
         trace('error', { stage: 'update', code: Number(error.code) });
         notice(errorText(error), true);
         if (manager?.currentState.connectionState === sdk.RealtimeConnectionState.idle) await stop('', true);
@@ -313,6 +344,8 @@ $('#upload-input').onchange = async event => {
   const name = file.name.replace(/\.[^.]+$/, '').slice(0, 20);
   const item = { id: crypto.randomUUID(), category, name, detail: '我的商品图', image, file, prompt: categoryPrompts[category] };
   wardrobe.unshift(item); selectItem(item);
+  categoryScroll.set(category, 0);
+  renderWardrobe();
 };
 $('#close-dialog').onclick = () => $('#phone-dialog').close();
 $('#phone-dialog').onclick = event => { if (event.target === $('#phone-dialog')) $('#phone-dialog').close(); };
