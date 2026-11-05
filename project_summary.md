@@ -2,7 +2,7 @@
 
 - 目标：PC/手机摄像头实时换装；大面积画面、右侧窄衣橱，黑金高定视觉。用户要求手动停止、可切换模型、多窗口同时对比；禁止代理自行运行生成以节省积分。
 - 入口：`npm start`（localhost:5173、局域网 HTTPS:3443）；`npm run share` 或「启动手机公网体验.command」启动手机公网授权通道。原启动 command 仍用于本地应用。
-- 公开前端：https://chenfeiyu01.github.io/youzan-realtime-tryon/ 。源码 main、构建 gh-pages，`npm run build`。手机多模型链接带 bridge/grant query，由本地手机按钮或 share 命令生成；不要提交该完整链接。
+- 发布状态（2026-11-05）：按用户要求已下线 GitHub Pages，先 Unpublish，再将发布来源分支保存为 None；原公开地址 https://chenfeiyu01.github.io/youzan-realtime-tryon/ 已返回 HTTP 404。源码仓库、main/gh-pages 分支和本地应用保留；未经新指令不重新发布。源码 main、构建 gh-pages，`npm run build`。手机多模型链接带 bridge/grant query，由本地手机按钮或 share 命令生成；不要提交该完整链接。
 - 结构：src/main.js 管理多窗口、单摄像头与共同衣橱；src/models.js 模型注册与 4 窗上限；src/providers.js 封装 Xmax/Decart 的连接、换图和释放；src/runtime.js 在本地 API、受保护公网授权 API、旧 Xmax 静态凭证之间路由；server.mjs 提供 API 与凭证签发；scripts/start-bridge.mjs 管理 Cloudflare Quick Tunnel。
 - 模型：Xmax X2.1/X2.0（SDK 1.1.3）；Decart VTON 3.6/3.5、Lucy 2.6/2.5（@decartai/sdk 0.2.14，名称已在 SDK 本地注册表核实）。不启用额外收费的 fast mode。
 - 对比（当前客户界面隐藏入口）：最多 4 个页面内窗口，摄像头只采集一次，每个模型克隆独立轨道，使用同一件参考服饰。逐窗选择/开始/停止/关闭；全部开始、全部停止；运行中切模型先关闭旧连接再启动新模型。左上角可另开独立浏览器窗口；同一组独立窗口经随机 room 的 BroadcastChannel 同步商品选择和上传 File；浏览器或上游账号可能限制实际并发。
