@@ -32,13 +32,13 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
 .workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--rail); gap: 26px; padding: 0 24px 24px; }
 .fitting { min-width: 0; min-height: 0; position: relative; }
 .stage { background: #202120; position: relative; height: 100%; overflow: hidden; isolation: isolate; }
-#camera-preview, .sdk-output { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-#camera-preview { z-index: 0; }
+.camera-preview, .sdk-output { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.camera-preview { z-index: 0; }
 .sdk-output { z-index: 2; visibility: visible; pointer-events: none; }
 .sdk-output > div { width: 100% !important; height: 100% !important; }
 .mirrored { transform: scaleX(-1); }
-.has-output #camera-preview { inset: auto 24px 96px auto; width: 90px; height: 120px; background: #202120; border: 1px solid #ffffff80; z-index: 5; object-fit: contain; }
-.stage[data-capture='portrait'] #camera-preview { object-fit: contain; }
+.has-output .camera-preview { inset: auto 24px 96px auto; width: 90px; height: 120px; background: #202120; border: 1px solid #ffffff80; z-index: 5; object-fit: contain; }
+.stage[data-capture='portrait'] .camera-preview { object-fit: contain; }
 .stage-top { position: absolute; left: 24px; right: 24px; top: 22px; display: flex; justify-content: flex-end; align-items: center; gap: 14px; z-index: 7; pointer-events: none; }
 .stage-status { display: flex; align-items: center; padding: 10px; }
 .stage-status i { width: 5px; height: 5px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px #ffffff18; }
@@ -150,7 +150,7 @@ details li { margin: 9px 0; }
   .empty-state { padding: 0 16px 6%; background-position: 82% center; }
   .light-button { font-size: 12px; gap: 25px; height: 45px; letter-spacing: 1.5px; }
   .light-button .icon { width: 21px; height: 21px; }
-  .has-output #camera-preview { right: 12px; bottom: 82px; width: 52px; height: 74px; }
+  .has-output .camera-preview { right: 12px; bottom: 82px; width: 52px; height: 74px; }
   .controlbar { right: 12px; bottom: 14px; padding: 3px; }
   .session-controls { min-height: 39px; }
   .session-controls select { font-size: 11px; width: 65px; padding: 10px 21px 10px 10px; background-position: right 8px center; }
@@ -172,4 +172,45 @@ details li { margin: 9px 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *:before, *:after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+.header-actions { position: absolute; left: 20px; top: 50%; translate: 0 -50%; display: flex; gap: 4px; }
+.views { position: relative; z-index: 1; height: 100%; display: grid; grid-template-columns: 1fr; grid-template-rows: 1fr; gap: 2px; min-height: 0; }
+.fitting[data-count="2"] .views { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fitting[data-count="3"] .views, .fitting[data-count="4"] .views { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+.fitting:not(.has-camera) { background: #deded9 url('/atelier-opening.webp') center / cover no-repeat; }
+.model-pane { min-width: 0; min-height: 0; }
+.model-pane:not(.has-camera) { background: transparent; }
+.empty-state { background: none; pointer-events: none; }
+.empty-state .light-button { pointer-events: auto; }
+.pane-heading { position: absolute; top: 16px; left: 16px; right: 16px; z-index: 7; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.model-select { min-width: 0; max-width: calc(100% - 64px); width: 166px; padding: 10px 25px 10px 12px; border: 1px solid #ffffff35; border-radius: 0; color: #fff; background: #20212090; backdrop-filter: blur(12px); font-size: 11px; letter-spacing: .3px; text-overflow: ellipsis; }
+.model-select option { color: #191919; background: #fafaf8; }
+.pane-actions { display: flex; align-items: center; gap: 2px; }
+.pane-toggle, .pane-remove { width: 29px; height: 34px; padding: 0; background: #20212070; color: #fff; display: grid; place-items: center; backdrop-filter: blur(8px); }
+.pane-toggle .icon, .pane-remove .icon { width: 14px; height: 14px; }
+.fitting:not(.has-camera) .pane-toggle { visibility: hidden; }
+.model-pane .connection-message { top: 68px; left: 16px; }
+.pane-error { position: absolute; top: 66px; left: 16px; right: 16px; z-index: 8; margin: 0; padding: 10px 12px; font-size: 11px; line-height: 1.7; color: #fff; background: #252522e8; overflow-wrap: anywhere; }
+.remote-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.controlbar .stage-tool { background: transparent; color: #191919; border: 0; border-radius: 0; width: 42px; height: 44px; backdrop-filter: none; }
+.fitting[data-count="3"] .has-output .camera-preview, .fitting[data-count="4"] .has-output .camera-preview { width: 48px; height: 64px; right: 16px; bottom: 16px; }
+@media(max-width: 760px) {
+  .header-actions { left: 3px; gap: 0; }
+  .header-actions .icon-button { width: 32px; height: 38px; }
+  .header-actions .icon { width: 15px; height: 15px; }
+  .fitting[data-count="2"] .views { grid-template-columns: 1fr; grid-template-rows: repeat(2, minmax(0, 1fr)); }
+  .fitting:not(.has-camera) { background-position: 82% center; }
+  .pane-heading { top: 10px; left: 10px; right: 10px; gap: 4px; }
+  .model-select { font-size: 10px; padding: 8px; width: 152px; max-width: calc(100% - 50px); }
+  .pane-toggle, .pane-remove { width: 24px; height: 30px; }
+  .pane-toggle .icon, .pane-remove .icon { width: 12px; height: 12px; }
+  .model-pane .connection-message { top: 51px; left: 10px; }
+  .pane-error { top: 50px; left: 10px; right: 10px; padding: 8px; font-size: 10px; }
+  .controlbar .stage-tool { width: 36px; height: 39px; }
+  .fitting[data-count="2"] .has-output .camera-preview { width: 38px; height: 52px; right: 10px; bottom: 10px; }
+  .fitting[data-count="3"] .pane-heading, .fitting[data-count="4"] .pane-heading { left: 5px; right: 5px; top: 6px; flex-wrap: wrap; }
+  .fitting[data-count="3"] .model-select, .fitting[data-count="4"] .model-select { width: 100%; max-width: 100%; font-size: 9px; padding: 7px 3px; }
+  .fitting[data-count="3"] .pane-actions, .fitting[data-count="4"] .pane-actions { margin-left: auto; }
+  .fitting[data-count="3"] .pane-error, .fitting[data-count="4"] .pane-error { top: 80px; }
 }

@@ -2,6 +2,31 @@ export const isHosted = import.meta.env.MODE === 'pages';
 const storageKey = 'youzan-demo-access';
 let access;
 let activeSession;
+let bridge;
+if (isHosted) {
+  const params = new URLSearchParams(location.search);
+  const url = params.get('bridge'), grant = params.get('grant');
+  if (url && grant && /^[a-f0-9]{64}$/.test(grant)) {
+    try {
+      const endpoint = new URL(url);
+      if (endpoint.protocol === 'https:' && endpoint.hostname.endsWith('.trycloudflare.com')) bridge = { url: endpoint.origin, grant };
+    } catch {}
+  }
+  if (!bridge) {
+    try {
+      const saved = JSON.parse(localStorage.getItem('youzan-model-bridge'));
+      const endpoint = new URL(saved?.url);
+      if (endpoint.protocol === 'https:' && endpoint.hostname.endsWith('.trycloudflare.com') && /^[a-f0-9]{64}$/.test(saved.grant)) bridge = { url: endpoint.origin, grant: saved.grant };
+    } catch {}
+  }
+  if (bridge) {
+    try { localStorage.setItem('youzan-model-bridge', JSON.stringify(bridge)); } catch {}
+    const current = new URL(location.href);
+    current.searchParams.set('bridge', bridge.url); current.searchParams.set('grant', bridge.grant);
+    for (const key of ['xmax', 'expires', 'limit']) current.searchParams.delete(key);
+    try { history.replaceState(null, '', current.href); } catch {}
+  }
+}
 if (isHosted) {
   const fromParams = params => {
     const key = params.get('xmax');
@@ -15,7 +40,7 @@ if (isHosted) {
   }
   access = candidates.find(value => value?.key?.startsWith('tk-') && Number.isFinite(value.expiresAt) && value.expiresAt > Date.now())
     || candidates.find(value => value?.key?.startsWith('tk-'));
-  if (validAccess()) {
+  if (validAccess() && !bridge) {
     for (const storage of ['sessionStorage', 'localStorage']) {
       try { window[storage].setItem(storageKey, JSON.stringify(access)); } catch {}
     }
@@ -35,20 +60,22 @@ function shareURL() {
   return url.href;
 }
 export async function apiRequest(route, options = {}) {
-  if (!isHosted) {
-    const response = await fetch(route, { signal: AbortSignal.timeout(20000), ...options,
-      headers: { 'Content-Type': 'application/json', ...options.headers } });
+  if (!isHosted || bridge) {
+    const response = await fetch(bridge ? bridge.url + route : route, { signal: AbortSignal.timeout(20000), ...options,
+      headers: { 'Content-Type': 'application/json', ...(bridge ? { Authorization: `Bearer ${bridge.grant}` } : {}), ...options.headers } });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || '连接失败');
     return data;
   }
   if (route === '/api/config') return { configured: validAccess(), hosted: true,
     accessStatus: validAccess() ? 'valid' : access?.key ? 'expired' : 'missing',
-    model: 'x2.1',
+    providers: { xmax: validAccess(), decart: false }, maxViews: 1,
     phoneURLs: [], httpsAvailable: true, publicURL: location.origin + location.pathname };
   if (route === '/api/diagnostics') return { ok: true };
   if (route === '/api/share-link') return { url: shareURL(), expiresAt: access.expiresAt };
   if (route === '/api/session' && options.method === 'POST') {
+    const { modelId } = JSON.parse(options.body || '{}');
+    if (modelId && modelId !== 'xmax-2.1') throw new Error('请使用新版多模型体验链接');
     if (!validAccess()) throw new Error('体验链接已过期，请获取新链接');
     if (activeSession) throw new Error('请先停止当前试衣');
     activeSession = { id: crypto.randomUUID().replaceAll('-', ''), temporaryApiKey: access.key };

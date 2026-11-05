@@ -2,8 +2,12 @@ import './style.css';
 import { categories, wardrobe, categoryPrompts } from './wardrobe.js';
 import { apiRequest, isHosted } from './runtime.js';
 import { createCameraSource } from './camera.js';
+import { modelOptions, modelFor, MAX_VIEWS } from './models.js';
+import { createProviderSession, preloadProvider } from './providers.js';
 
 const icons = {
+  compare: '<rect x="3" y="4" width="7" height="16"/><path d="M14 4h7v16h-7M17.5 9v6M14.5 12h6"/>',
+  window: '<path d="M14 3h7v7m0-7L11 13"/><path d="M10 3H3v18h18v-7"/>',
   camera: '<rect x="3" y="6" width="18" height="14" rx="3"/><path d="m8 6 1.5-3h5L16 6"/><circle cx="12" cy="13" r="4"/>',
   switch: '<path d="M4 8h14l-3-3M20 16H6l3 3"/><path d="M20 8a8 8 0 0 1 0 8M4 16a8 8 0 0 1 0-8"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -18,104 +22,177 @@ const icons = {
 const icon = (name, cls = '') => `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
 document.querySelector('#app').innerHTML = `
   <header class="header">
-    <a class="brand" href="${import.meta.env.BASE_URL}" aria-label="有赞实时换装首页"><h1>有赞<span>实时换装</span></h1></a>
+    <div class="header-actions"><button class="icon-button" id="add-view" aria-label="添加对比窗口" title="添加对比窗口">${icon('compare')}</button><button class="icon-button" id="new-window" aria-label="打开独立窗口" title="打开独立窗口">${icon('window')}</button></div>
+    <a class="brand" href="${location.href}" aria-label="有赞实时换装首页"><h1>有赞<span>实时换装</span></h1></a>
     <button class="icon-button" id="phone-button" aria-label="手机访问" title="手机访问">${icon('phone')}</button>
   </header>
   <main class="workspace">
-    <section class="fitting" aria-label="实时试衣画面">
-      <div class="stage" id="stage">
-        <video id="camera-preview" autoplay playsinline muted aria-label="本地摄像头画面"></video>
-        <div class="sdk-output" id="sdk-output" aria-label="AI 实时换装画面"></div>
-        <div class="stage-top"><span class="stage-status" id="stage-status" hidden><i></i></span><button class="stage-tool" id="switch-camera" aria-label="切换前后摄像头" title="切换前后摄像头" disabled>${icon('switch')}</button></div>
-        <div class="empty-state" id="empty-state"><button id="open-camera" class="light-button"><span>开启摄像头</span>${icon('arrow')}</button></div>
-        <div class="connection-message" id="connection-message" hidden><span class="spinner"></span><span>连接中</span></div>
-      </div>
-      <div class="controlbar">
-        <div class="session-controls"><button id="start-button" class="primary-button" disabled><span>开始试衣</span>${icon('arrow')}</button><button id="stop-button" class="stop-button" hidden><span>停止试衣</span>${icon('stop')}</button></div>
-      </div>
+    <section class="fitting" id="fitting" aria-label="实时试衣画面对比">
+      <div class="views" id="views"></div>
+      <div class="empty-state" id="empty-state"><button id="open-camera" class="light-button"><span>开启摄像头</span>${icon('arrow')}</button></div>
+      <div class="controlbar"><button class="stage-tool" id="switch-camera" aria-label="切换前后摄像头" title="切换前后摄像头" disabled>${icon('switch')}</button><div class="session-controls"><button id="start-button" class="primary-button" disabled><span>开始试衣</span>${icon('arrow')}</button><button id="stop-button" class="stop-button" hidden><span>停止试衣</span>${icon('stop')}</button></div></div>
       <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
     </section>
     <aside class="wardrobe" aria-label="服饰选择">
       <div class="wardrobe-heading"><nav class="categories" id="categories" aria-label="服饰分类"></nav><button class="icon-button" id="upload-button" title="上传商品图" aria-label="上传商品图">${icon('plus')}</button></div>
-      <div class="garments" id="garments"></div>
-      <input type="file" id="upload-input" accept="image/jpeg,image/png,image/webp" hidden />
+      <div class="garments" id="garments"></div><input type="file" id="upload-input" accept="image/jpeg,image/png,image/webp" hidden />
     </aside>
   </main>
-  <dialog id="phone-dialog"><button class="dialog-close icon-button" id="close-dialog" aria-label="关闭">${icon('close')}</button><h2>手机访问</h2><p>连接同一 Wi-Fi 后扫码</p><div id="phone-content"></div><details><summary>首次连接</summary><ol><li>将「有赞实时换装-手机证书.cer」发送到手机并安装。</li><li>iPhone：设置 → 通用 → 关于本机 → 证书信任设置，信任「Youzan Local Try-On CA」。Android：在安全设置中安装 CA 证书。</li><li>用 Safari 或 Chrome 扫码打开。</li></ol></details></dialog>
+  <dialog id="phone-dialog"><button class="dialog-close icon-button" id="close-dialog" aria-label="关闭">${icon('close')}</button><h2>手机访问</h2><p>扫码打开</p><div id="phone-content"></div><details><summary>首次连接</summary><ol><li>将「有赞实时换装-手机证书.cer」发送到手机并安装。</li><li>iPhone：设置 → 通用 → 关于本机 → 证书信任设置，信任「Youzan Local Try-On CA」。Android：在安全设置中安装 CA 证书。</li><li>用 Safari 或 Chrome 扫码打开。</li></ol></details></dialog>
 `;
 const $ = selector => document.querySelector(selector);
-let category = 'tops';
-let selected = wardrobe[0];
-let appliedId;
-let camera;
-let cameraSource;
-let cameraBusy = false;
-let cameraFacing = 'user';
-let config;
-let sdk;
-let client;
-let manager;
-let localStream;
-let outputView;
-let session;
-let phase = 'idle';
-let generation = 0;
-let selectionRevision = 0;
-let failedItemId;
-const categoryScroll = new Map();
-let updateQueue = Promise.resolve();
-let stopping;
-let updateDebounce;
-let sdkPromise;
-const loadSDK = () => sdkPromise ||= import('@xmaxai/web-sdk');
-const trace = (event, fields = {}) => {
-  void request('/api/diagnostics', { method: 'POST', body: JSON.stringify({ event, ...fields }) }).catch(() => {});
-};
-const uploaded = new Map();
-const objectURLs = new Set();
-const active = () => phase === 'starting' || phase === 'live';
-function closeCamera() {
-  cameraSource?.close(); cameraSource = undefined;
-  camera?.getTracks().forEach(track => track.stop()); camera = undefined;
+let category = 'tops', selected = wardrobe[0], camera, cameraSource, cameraBusy = false, cameraFacing = 'user', config;
+let selectionRevision = 0, updateDebounce;
+const panes = [];
+const categoryScroll = new Map(), objectURLs = new Set();
+const busy = pane => ['starting', 'live', 'stopping'].includes(pane.phase);
+const active = () => panes.some(busy);
+const request = apiRequest;
+const configured = pane => Boolean(config?.providers?.[pane.model.provider] ?? (pane.model.provider === 'xmax' && config?.configured));
+function closeCamera() { cameraSource?.close(); cameraSource = undefined; camera = undefined; }
+function notice(text, error = false) { $('#notice').textContent = error ? text : ''; $('#notice').hidden = !error || !text; }
+function configurationIssue(pane = panes[0]) {
+  if (!config || configured(pane)) return '';
+  if (isHosted && !config.providers?.decart && pane.model.provider === 'decart') return '请使用新版多模型体验链接，并保持电脑授权服务运行。';
+  if (!isHosted) return `${pane.model.provider === 'decart' ? 'Decart' : 'Xmax'} 密钥尚未配置，请重启本地服务。`;
+  return config.accessStatus === 'expired' ? '体验授权已过期，请打开新的体验链接。' : '此链接缺少授权，请打开完整体验链接。';
 }
-function notice(text, error = false) { $('#notice').textContent = error ? text : ''; $('#notice').hidden = !error || !text; $('#notice').classList.toggle('error', error); }
-function configurationIssue() {
-  if (!config || config.configured) return '';
-  if (!isHosted) return '本地 API Key 尚未配置，请填写 .env 后重启服务。';
-  return config.accessStatus === 'expired'
-    ? '体验授权已过期，请打开新的体验链接。'
-    : '此链接未携带体验授权，请打开完整体验链接。';
-}
-function stageStatus(text, live = false) { $('#stage-status').hidden = !live; $('#stage-status').setAttribute('aria-label', text); $('#stage-status').classList.toggle('live', live); }
 function errorText(error) {
-  if (error?.name === 'NotAllowedError') return '摄像头权限未开启，请在浏览器地址栏允许摄像头。';
-  if (error?.name === 'NotFoundError') return '没有找到摄像头，请检查设备连接。';
-  if (error?.name === 'NotReadableError') return '摄像头可能正被其他应用占用，请关闭占用它的应用后重试。';
-  const raw = String(error?.message || '连接未成功，请手动重试。');
-  return raw.replace(/(?:uk|tk)-[a-zA-Z0-9_-]+/g, '[密钥已隐藏]').slice(0, 240);
+  if (error?.name === 'NotAllowedError') return '请在浏览器地址栏允许摄像头。';
+  if (error?.name === 'NotFoundError') return '没有找到摄像头。';
+  if (error?.name === 'NotReadableError') return '摄像头正被其他应用占用。';
+  return String(error?.message || '连接失败，请手动重试。').replace(/(?:dct_[a-zA-Z0-9_]+|(?:uk|tk)-[a-zA-Z0-9_-]+)/g, '[密钥已隐藏]').slice(0, 200);
 }
 function syncControls() {
-  $('#app').dataset.state = phase;
   const running = active();
-  $('#start-button').hidden = running || phase === 'stopping';
-  $('#stop-button').hidden = !running && phase !== 'stopping';
-  $('#stop-button').disabled = phase === 'stopping';
-  $('#stop-button span').textContent = phase === 'stopping' ? '正在停止' : '停止试衣';
-  $('#start-button').disabled = !camera || !selected || !config?.configured || cameraBusy || Boolean(session) || phase !== 'idle';
-  $('#start-button').title = configurationIssue() || (!camera ? '请先开启摄像头' : '开始试衣');
-  $('#switch-camera').disabled = running || phase === 'stopping' || cameraBusy || !camera;
+  $('#app').dataset.state = running ? 'live' : 'idle';
+  $('#fitting').classList.toggle('has-camera', Boolean(camera));
+  $('#fitting').dataset.count = panes.length;
+  $('#views').style.setProperty('--view-count', panes.length);
+  $('#empty-state').hidden = Boolean(camera);
+  $('#start-button').hidden = running;
+  $('#stop-button').hidden = !running;
+  $('#start-button span').textContent = panes.length > 1 ? '开始对比' : '开始试衣';
+  $('#stop-button span').textContent = panes.length > 1 ? '停止全部' : '停止试衣';
+  $('#start-button').disabled = !camera || cameraBusy || !selected || !panes.some(p => configured(p) && p.phase === 'idle');
+  $('#stop-button').disabled = panes.every(p => !busy(p) || p.phase === 'stopping');
+  $('#switch-camera').disabled = running || cameraBusy || !camera;
   $('#open-camera').disabled = cameraBusy;
+  $('#add-view').disabled = panes.length >= MAX_VIEWS;
+  for (const pane of panes) {
+    pane.element.dataset.phase = pane.phase;
+    pane.element.classList.toggle('has-camera', Boolean(camera));
+    pane.element.classList.toggle('has-output', pane.phase === 'live');
+    pane.select.disabled = ['starting', 'stopping'].includes(pane.phase);
+    pane.toggle.disabled = !camera || cameraBusy || !configured(pane) || pane.phase === 'stopping';
+    pane.toggle.innerHTML = icon(busy(pane) ? 'stop' : 'play');
+    pane.toggle.setAttribute('aria-label', busy(pane) ? '停止此窗口' : '开始此窗口');
+    pane.toggle.title = configurationIssue(pane) || (busy(pane) ? '停止此窗口' : '开始此窗口');
+    pane.remove.hidden = panes.length === 1;
+    pane.status.hidden = pane.phase !== 'starting';
+    pane.error.hidden = !pane.error.textContent;
+  }
   updateSelection();
 }
 function updateSelection() {
   for (const button of $('#garments').children) {
     const chosen = button.dataset.itemId === selected?.id;
-    const pending = chosen && active() && selected.id !== appliedId && selected.id !== failedItemId;
-    button.classList.toggle('selected', chosen);
-    button.classList.toggle('is-applying', pending);
-    button.setAttribute('aria-pressed', String(chosen));
-    button.setAttribute('aria-busy', String(pending));
+    const pending = chosen && panes.some(p => ['starting', 'live'].includes(p.phase) && p.appliedId !== selected.id && p.failedId !== selected.id);
+    button.classList.toggle('selected', chosen); button.classList.toggle('is-applying', pending);
+    button.setAttribute('aria-pressed', String(chosen)); button.setAttribute('aria-busy', String(pending));
   }
+}
+function addPane(modelId) {
+  if (panes.length >= MAX_VIEWS) return;
+  const model = modelFor(modelId) || modelOptions[0];
+  const element = document.createElement('div'); element.className = 'stage model-pane';
+  element.innerHTML = `<video class="camera-preview" autoplay playsinline muted aria-label="本地摄像头画面"></video><div class="sdk-output"></div><div class="pane-heading"><select class="model-select" aria-label="选择此窗口的模型"></select><div class="pane-actions"><button class="pane-toggle" aria-label="开始此窗口">${icon('play')}</button><button class="pane-remove" aria-label="关闭此窗口">${icon('close')}</button></div></div><div class="connection-message" hidden><span class="spinner"></span><span>连接中</span></div><p class="pane-error" role="status" hidden></p>`;
+  const pane = { model, element, select: element.querySelector('select'), preview: element.querySelector('.camera-preview'), output: element.querySelector('.sdk-output'), toggle: element.querySelector('.pane-toggle'), remove: element.querySelector('.pane-remove'), status: element.querySelector('.connection-message'), error: element.querySelector('.pane-error'), phase: 'idle', run: 0, ready: false, queue: Promise.resolve() };
+  for (const option of modelOptions) { const el = document.createElement('option'); el.value = option.id; el.textContent = option.label; pane.select.append(el); }
+  pane.select.value = model.id;
+  pane.select.onchange = async () => {
+    const resume = busy(pane); const next = modelFor(pane.select.value);
+    await stopPane(pane); if (pane.removing || !panes.includes(pane)) return;
+    pane.model = next; pane.error.textContent = ''; syncControls();
+    void preloadProvider(next.provider).catch(() => {});
+    if (resume && camera && configured(pane)) void startPane(pane);
+    else if (!configured(pane)) notice(configurationIssue(pane), true);
+  };
+  pane.toggle.onclick = () => busy(pane) ? void stopPane(pane) : void startPane(pane);
+  pane.remove.onclick = async () => {
+    if (panes.length <= 1 || pane.removing) return;
+    pane.removing = true; pane.remove.disabled = true; await stopPane(pane);
+    const index = panes.indexOf(pane);
+    if (index >= 0 && panes.length > 1) { panes.splice(index, 1); element.remove(); }
+    else { pane.removing = false; pane.remove.disabled = false; }
+    syncControls();
+  };
+  panes.push(pane); $('#views').append(element);
+  if (camera) { pane.preview.srcObject = camera; pane.preview.classList.toggle('mirrored', cameraFacing === 'user'); void pane.preview.play().catch(() => {}); }
+  syncControls(); return pane;
+}
+async function startPane(pane) {
+  if (!camera || !selected || busy(pane) || !configured(pane) || pane.removing || !panes.includes(pane)) return;
+  const run = ++pane.run, item = selected;
+  pane.phase = 'starting'; pane.appliedId = undefined; pane.failedId = undefined; pane.ready = false; pane.error.textContent = '';
+  const current = () => pane.run === run && panes.includes(pane);
+  const adapter = createProviderSession({ model: pane.model, stream: camera, format: cameraSource.format, output: pane.output, mirrored: cameraFacing === 'user',
+    onLive: () => { if (current() && pane.phase !== 'stopping') { pane.phase = 'live'; syncControls(); } },
+    onError: error => { if (current()) { pane.error.textContent = errorText(error); void stopPane(pane); } },
+  });
+  pane.adapter = adapter; syncControls();
+  try {
+    await adapter.start(item);
+    if (!current()) return;
+    pane.ready = true; pane.appliedId = item.id; syncControls();
+    if (item.id !== selected.id) queueUpdate(pane);
+  } catch (error) {
+    if (current()) { pane.error.textContent = errorText(error); await stopPane(pane); }
+  }
+}
+async function stopPane(pane) {
+  if (pane.stopping) return pane.stopping;
+  ++pane.run; pane.ready = false; pane.phase = 'stopping'; syncControls();
+  const adapter = pane.adapter; pane.adapter = undefined;
+  pane.stopping = (async () => {
+    try { await adapter?.close(); } catch (error) { pane.error.textContent = errorText(error); }
+    pane.output.replaceChildren(); pane.appliedId = undefined; pane.queue = Promise.resolve(); pane.phase = 'idle';
+  })().finally(() => { pane.stopping = undefined; syncControls(); });
+  return pane.stopping;
+}
+function queueUpdate(pane) {
+  const item = selected, revision = selectionRevision, run = pane.run;
+  pane.queue = pane.queue.catch(() => {}).then(async () => {
+    if (pane.phase !== 'live' || !pane.ready || pane.run !== run || revision !== selectionRevision || pane.appliedId === item.id) return;
+    try {
+      await pane.adapter.update(item);
+      if (pane.run === run) { pane.appliedId = item.id; pane.failedId = undefined; pane.error.textContent = ''; }
+    } catch (error) { if (pane.run === run) { pane.failedId = item.id; pane.error.textContent = errorText(error); } }
+    finally { syncControls(); }
+  });
+}
+function selectItem(item) {
+  if (selected?.id === item.id && !panes.some(p => p.failedId === item.id)) return;
+  selected = item; ++selectionRevision;
+  try { localStorage.setItem('youzan-selected-item', item.id); } catch {}
+  for (const pane of panes) pane.failedId = undefined;
+  clearTimeout(updateDebounce); updateDebounce = setTimeout(() => panes.forEach(queueUpdate), 180);
+  syncControls();
+}
+async function openCamera() {
+  if (cameraBusy || active()) return;
+  cameraBusy = true; syncControls(); closeCamera();
+  for (const pane of panes) void preloadProvider(pane.model.provider).catch(() => {});
+  try {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) throw new Error('请使用 Safari 或 Chrome 的 HTTPS 页面');
+    cameraSource = await createCameraSource(cameraFacing); camera = cameraSource.stream;
+    if (document.hidden) { closeCamera(); return; }
+    for (const pane of panes) {
+      pane.preview.srcObject = camera; pane.preview.classList.toggle('mirrored', cameraFacing === 'user'); await pane.preview.play();
+    }
+    const problem = panes.map(p => configurationIssue(p)).filter(Boolean)[0]; notice(problem, Boolean(problem));
+  } catch (error) { closeCamera(); notice(errorText(error), true); }
+  finally { cameraBusy = false; syncControls(); }
 }
 function renderWardrobe() {
   if (!$('#categories').children.length) {
@@ -156,183 +233,23 @@ function renderWardrobe() {
   $('#garments').scrollTop = categoryScroll.get(category) || 0;
   updateSelection();
 }
-function selectItem(item) {
-  if (selected?.id === item.id && selected.id !== failedItemId) return;
-  selected = item; failedItemId = undefined; ++selectionRevision; syncControls();
-  if (phase === 'live') { clearTimeout(updateDebounce); updateDebounce = setTimeout(queueUpdate, 180); }
-  else notice(configurationIssue(), Boolean(configurationIssue()));
-}
-async function request(route, options = {}) {
-  return apiRequest(route, options);
-}
-async function openCamera() {
-  if (cameraBusy || active() || phase === 'stopping') return;
-  cameraBusy = true; syncControls();
-  void loadSDK().catch(() => { sdkPromise = undefined; });
-  try {
-    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) throw new Error('请使用 Safari 或 Chrome 的 HTTPS 页面');
-    closeCamera();
-    cameraSource = await createCameraSource(cameraFacing);
-    camera = cameraSource.stream;
-    if (document.hidden) { closeCamera(); return; }
-    $('#stage').dataset.capture = cameraSource.portrait ? 'portrait' : 'landscape';
-    const video = $('#camera-preview'); video.srcObject = camera;
-    video.classList.toggle('mirrored', cameraFacing === 'user');
-    await video.play();
-    $('#stage').classList.add('has-camera'); $('#empty-state').hidden = true;
-    stageStatus('本地预览'); notice(configurationIssue(), Boolean(configurationIssue()));
-  } catch (error) {
-    closeCamera(); $('#empty-state').hidden = false; $('#stage').classList.remove('has-camera');
-    notice(errorText(error), true);
-  }
-  finally { cameraBusy = false; syncControls(); }
-}
-async function referenceFor(item, ownClient) {
-  if (item.remote) return item.remote;
-  if (uploaded.has(item.id)) return uploaded.get(item.id);
-  const data = item.file || await fetch(item.image).then(response => {
-    if (!response.ok) throw new Error('服饰参考图未能加载，请换一件或上传自己的商品图。');
-    return response.blob();
-  });
-  const result = await ownClient.createStorageService().uploadImage({ data, fileName: item.file?.name || `${item.id}.webp`, contentType: data.type || 'image/webp' });
-  uploaded.set(item.id, result.url); return result.url;
-}
-function assertCurrent(run) { if (run !== generation || !active() || document.hidden) throw new DOMException('已取消本次试衣', 'AbortError'); }
-function connection() { $('#connection-message').hidden = false; }
-async function start() {
-  if (!camera || active() || phase !== 'idle' || session || !selected) return;
-  const run = ++generation;
-  const startedAt = performance.now();
-  let step = 'sdk';
-  let playbackStarted = false;
-  trace('prepare');
-  phase = 'starting'; appliedId = undefined; syncControls();
-  stageStatus('准备连接'); connection('正在准备试衣…'); notice('');
-  let issued;
-  try {
-    sdk ||= await loadSDK(); assertCurrent(run);
-    step = 'credential';
-    issued = await request('/api/session', { method: 'POST', body: '{}' });
-    if (run !== generation || !active() || document.hidden) {
-      await request(`/api/session/${issued.id}`, { method: 'DELETE' }); return;
-    }
-    session = issued;
-    client = new sdk.XmaxClient(new sdk.XmaxConfiguration({ apiKey: issued.temporaryApiKey, environment: sdk.XmaxEnvironment.china, loggerOptions: sdk.XmaxLoggerOption.none }));
-    manager = client.createRealtimeManager(new sdk.RealtimeConfiguration({ model: sdk.RealtimeModel.x2_1 }));
-    const thisManager = manager;
-    await manager.setStateListener(state => {
-      if (thisManager !== manager || run !== generation || !active()) return;
-      if (state.reason?.kind === 'failure') {
-        trace('error', { stage: state.connectionState, code: Number(state.reason.error.code), ms: performance.now() - startedAt });
-        notice(errorText(state.reason.error), true); void stop('', true); return;
-      }
-      if (state.connectionState === sdk.RealtimeConnectionState.generating) {
-        phase = 'live'; $('#stage').classList.add('has-output'); $('#connection-message').hidden = true;
-        if (!playbackStarted) {
-          playbackStarted = true;
-          trace('frame', { ms: performance.now() - startedAt });
-          void request(`/api/session/${issued.id}/ready`, { method: 'POST', body: '{}' }).catch(error => {
-            if (run !== generation) return;
-            notice(errorText(error), true); void stop('', true);
-          });
-        }
-        stageStatus('实时试衣中', true); notice(''); syncControls();
-        if (selected?.id !== appliedId) queueUpdate();
-      }
-    });
-    step = 'reference';
-    const initialItem = selected;
-    connection('正在准备服饰参考图…');
-    const referencePath = await referenceFor(initialItem, client); assertCurrent(run);
-    const track = camera.getVideoTracks()[0];
-    const settings = cameraSource.format;
-    step = 'rtc';
-    localStream = await manager.createExternalVideoStream({ videoTrack: track,
-      videoFormat: new sdk.RealtimeVideoFormat({ width: settings.width || 1280, height: settings.height || 720,
-        fps: settings.fps, minimumBitrate: 300, maximumBitrate: 1600 }) });
-    assertCurrent(run);
-    outputView = new sdk.XmaxRealtimeVideoView({ videoContentMode: sdk.VideoContentMode.fit, isInteractionEnabled: false, fadeInDurationMs: 0 });
-    outputView.isMirrored = cameraFacing === 'user';
-    outputView.element.style.cssText = 'width:100%;height:100%;background:transparent'; outputView.attach($('#sdk-output'));
-    await request(`/api/session/${session.id}/arm`, { method: 'POST', body: '{}' }); assertCurrent(run);
-    step = 'connecting'; trace('connect', { ms: performance.now() - startedAt }); connection();
-    const result = await manager.startGeneration({ localStream,
-      context: new sdk.RealtimeContext({ prompt: initialItem.prompt, referencePath }), faceRestoration: true });
-    assertCurrent(run); appliedId = initialItem.id; outputView.track = result.videoTrack; syncControls();
-  } catch (error) {
-    if (run !== generation) return;
-    trace('error', { stage: step, code: Number(error.code), ms: performance.now() - startedAt });
-    const message = errorText(error); await stop('', true); notice(message, true);
-  }
-}
-function queueUpdate() {
-  const item = selected; const revision = selectionRevision; const run = generation;
-  updateQueue = updateQueue.catch(() => {}).then(async () => {
-    if (phase !== 'live' || run !== generation || revision !== selectionRevision || item.id === appliedId) return;
-    try {
-      notice('');
-      const referencePath = await referenceFor(item, client);
-      if (phase !== 'live' || run !== generation || revision !== selectionRevision) return;
-      const currentManager = manager;
-      const result = await currentManager.startGeneration({ localStream,
-        context: new sdk.RealtimeContext({ prompt: item.prompt, referencePath }), faceRestoration: true });
-      if (run !== generation || phase !== 'live') return;
-      outputView.track = result.videoTrack; appliedId = item.id; failedItemId = undefined;
-      if (revision === selectionRevision) notice('');
-    } catch (error) {
-      if (run === generation && active()) {
-        failedItemId = item.id;
-        trace('error', { stage: 'update', code: Number(error.code) });
-        notice(errorText(error), true);
-        if (manager?.currentState.connectionState === sdk.RealtimeConnectionState.idle) await stop('', true);
-      }
-    }
-    finally { syncControls(); }
-  });
-}
-async function stop(message = '试衣已停止。', preserveError = false) {
-  if (stopping) return stopping;
-  ++generation; phase = 'stopping'; clearTimeout(updateDebounce);
-  const oldManager = manager; const oldSession = session;
-  manager = undefined; client = undefined; localStream = undefined;
-  outputView?.detach(); outputView = undefined; updateQueue = Promise.resolve();
-  $('#connection-message').hidden = true; $('#stage').classList.remove('has-output'); syncControls();
-  stopping = (async () => {
-    let cleanupTimeout;
-    const close = oldManager ? Promise.race([
-      oldManager.close(),
-      new Promise((_, reject) => { cleanupTimeout = setTimeout(() => reject(new Error('关闭超时')), 5000); }),
-    ]).finally(() => clearTimeout(cleanupTimeout)) : Promise.resolve();
-    const results = await Promise.allSettled([close]);
-    results.push((await Promise.allSettled([
-      oldSession ? request(`/api/session/${oldSession.id}`, { method: 'DELETE' }) : Promise.resolve(),
-    ]))[0]);
-    session = results[1].status === 'fulfilled' ? undefined : oldSession;
-    phase = 'idle'; appliedId = undefined;
-    stageStatus(camera ? '本地预览' : '试衣间已就绪');
-    if (session) {
-      notice('本地画面已停止，服务端关闭尚未确认；后台会继续停用凭证，当前不会重新开始。请稍后刷新。', true);
-    } else if (results[0].status === 'rejected') {
-      notice(isHosted ? '连接关闭未确认，请关闭此页面' : 'Xmax 凭证已停用；视频资源释放未确认，请刷新页面。', true);
-    } else if (message && !preserveError) notice(message);
-  })().finally(() => { stopping = undefined; syncControls(); });
-  return stopping;
-}
 $('#open-camera').onclick = openCamera;
-$('#start-button').onclick = start;
-$('#stop-button').onclick = () => void stop();
+$('#start-button').onclick = () => { for (const pane of panes) if (!busy(pane) && configured(pane)) void startPane(pane); };
+$('#stop-button').onclick = () => { for (const pane of panes) if (busy(pane)) void stopPane(pane); };
 $('#switch-camera').onclick = async () => { if (!active()) { cameraFacing = cameraFacing === 'user' ? 'environment' : 'user'; await openCamera(); } };
+$('#add-view').onclick = () => addPane(panes.some(p => p.model.provider === 'xmax') ? 'decart-vton-3.6' : 'xmax-2.1');
+$('#new-window').onclick = () => {
+  const url = new URL(location.href); url.searchParams.set('model', panes[0].model.id); url.searchParams.set('item', selected.id);
+  window.open(url.href, '_blank', 'popup,width=1000,height=850,noopener,noreferrer');
+};
 $('#upload-button').onclick = () => $('#upload-input').click();
-$('#upload-input').onchange = async event => {
+$('#upload-input').onchange = event => {
   const file = event.target.files?.[0]; event.target.value = '';
   if (!file) return;
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) { notice('请选择 10 MB 以内的 JPG、PNG 或 WebP 商品图。', true); return; }
   const image = URL.createObjectURL(file); objectURLs.add(image);
-  const name = file.name.replace(/\.[^.]+$/, '').slice(0, 20);
-  const item = { id: crypto.randomUUID(), category, name, detail: '我的商品图', image, file, prompt: categoryPrompts[category] };
-  wardrobe.unshift(item); selectItem(item);
-  categoryScroll.set(category, 0);
-  renderWardrobe();
+  const item = { id: crypto.randomUUID(), category, name: file.name.replace(/\.[^.]+$/, '').slice(0, 20), image, file, prompt: categoryPrompts[category] };
+  wardrobe.unshift(item); selectItem(item); categoryScroll.set(category, 0); renderWardrobe();
 };
 $('#close-dialog').onclick = () => $('#phone-dialog').close();
 $('#phone-dialog').onclick = event => { if (event.target === $('#phone-dialog')) $('#phone-dialog').close(); };
@@ -374,20 +291,20 @@ $('#phone-button').onclick = async () => {
 };
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
-    if (active()) void stop('切换到后台，试衣已自动停止。');
-    closeCamera(); $('#camera-preview').srcObject = null;
-    $('#stage').classList.remove('has-camera'); $('#empty-state').hidden = false; syncControls();
+    for (const pane of panes) { if (busy(pane)) void stopPane(pane); pane.preview.srcObject = null; }
+    closeCamera(); syncControls();
   }
 });
 window.addEventListener('pagehide', () => {
-  ++generation;
-  if (session && !isHosted) navigator.sendBeacon(`/api/session/${session.id}`, new Blob(['{}'], { type: 'application/json' }));
-  void manager?.close().catch(() => {});
+  clearTimeout(updateDebounce); for (const pane of panes) void stopPane(pane);
   closeCamera(); objectURLs.forEach(url => URL.revokeObjectURL(url));
 });
-renderWardrobe(); syncControls();
-void loadSDK().catch(() => { sdkPromise = undefined; });
+const initial = new URLSearchParams(location.search);
+let remembered;
+try { remembered = localStorage.getItem('youzan-selected-item'); } catch {}
+selected = wardrobe.find(item => item.id === (initial.get('item') || remembered)) || wardrobe[0]; category = selected.category;
+renderWardrobe(); addPane(initial.get('model') || 'xmax-2.1');
 request('/api/config').then(value => {
   config = value; syncControls();
-  if (!config.configured) notice(configurationIssue(), true);
-}).catch(error => notice(errorText(error), true));
+  const problem = configurationIssue(); if (problem) notice(problem, true);
+}).catch(error => notice(isHosted ? '电脑授权服务未连接，请保持电脑上的应用和公网连接运行后刷新。' : errorText(error), true));

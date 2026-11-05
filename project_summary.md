@@ -1,34 +1,17 @@
-# 有赞实时换装 · 本地应用
+# 有赞实时换装
 
-- 目标：PC 和手机浏览器摄像头实时换装；大面积视频 + 小面积分类衣橱。简洁、轻奢、易用。
-- 界面文字：仅保留名称、分类、时长和操作按钮；无装饰英文、标语、页脚、商品说明和常驻教学小字。商品名保留在无障碍标签和悬停提示中，手机连接说明收在弹窗；仅连接中与错误时显示必要反馈。
-- 运行入口：`npm start` / `启动有赞实时换装.command`。
-- PC：`http://localhost:5173`，HTTP 仅回环监听。手机：局域网 HTTPS 3443，需要安装本机生成的 CA 证书并扫码配对。
-- 结构：`server.mjs` 提供 Vite 中间件、临时密钥 API 与停止控制；`scripts/make-certs.mjs` 生成本地证书；`src/main.js` 管理免费摄像头预览、SDK 会话、换装与清理；`src/style.css` 自适应布局；`src/wardrobe.js` 内置 16 件参考服饰；`public/garments/` 为本地图片。
-- 接入：Xmax 中国区，`@xmaxai/web-sdk` 1.1.3，`RealtimeModel.x2_1`，官方临时 Key 接口、`createExternalVideoStream` 复用本地摄像头轨道、`createStorageService().uploadImage` 上传商品图、`XmaxRealtimeVideoView` 展示生成画面。
-- 凭据：用户提供的永久 Key 仅存于忽略的 `.env`，不复制到前端；客户端获取有效期和额度受限的临时 Key。不要在日志、回答、Git 或归档里包含真实 Key。
-- 交互：由用户手动停止，无时长选择、倒计时或首帧等待限时；切衣不重启会话。页面隐藏或关闭仍停止并释放摄像头。
-- 额度：用户明确要求移除试玩时限及人工配额。临时 Key 有效 24 小时、API 必填 pointsLimit 设为 2147483647（不再人为限制短时体验），并发 1；实际消费受 Xmax 账户余额与上游规则约束，不充值、不自动重试生成。后台仅在手动停止、页面离开或进程退出时停用 Key，失败会重试停用。
-- 性能：默认采集 1280×720 / 720×1280、20 fps、最大 24 fps，上行码率 300–1600 kbps；提前加载 SDK，保留自动质量调整。输出容器不再 visibility:hidden，移除冗余隐藏视频播放器；SDK 自行处理首帧预热。
-- 布局：PC 和手机均采用全高大画面 + 右侧窄服饰栏，控制按钮浮于画面下角。主画面不被下方衣橱挤占。
-- 诊断：`.local/connection-events.jsonl` 仅记录阶段耗时和数值错误码，无密钥、商品图或摄像头画面。未取得真实失败日志，网络失败与卡顿原因仍待用户实测证据。
-- 验证约束：用户禁止代理自行体验，以节省试衣积分。仅做发布构建和永久凭据排除检查；未打开摄像头、运行浏览器体验或调用模型生成。发布所需临时凭证申请不调用推理。
-- 未验证项：真实 Key 有效性/额度、RTC 连通性、PC/手机摄像头、Safari/Android 系统信任设置、商品细节与鞋履效果、实际计费与终止行为。交由用户手动体验。
-
-## GitHub Pages
-
-- Repository: https://github.com/chenfeiyu01/youzan-realtime-tryon
-- Pages: https://chenfeiyu01.github.io/youzan-realtime-tryon/
-- Source branch: main. Build output branch: gh-pages. Build: npm run build.
-- Hosted runtime: src/runtime.js accepts temporary authorization in URL query parameters and legacy fragments. Valid credentials persist in both sessionStorage and localStorage; current URL retains query authorization so opening in another browser carries it. No permanent credential is in source or build output; referrer policy is no-referrer.
-- Demo access: 24-hour provider credential, no short-demo point cap, one concurrent session. .local/shared-access.json is ignored; its URL must not be committed. Browser URL includes the temporary bearer token; only share the intended experience link.
-- On static Pages there is no persistent backend or token refresh. Manual stop closes the SDK; leaving the page closes camera/generation. Provider balance, credential expiry and upstream failures can still end a session. No frontend playback or connection countdown remains.
-- The desktop phone button can issue or reuse a limited public Pages link. No certificate or same-Wi-Fi requirement for the hosted page.
-- Publication build and credential-exclusion scan completed; no webcam or generation test performed. Issuing demo credentials is an operational action, not a generation call.
-- Portrait fix: src/camera.js identifies touch-device orientation instead of relying on page width, requests aspectRatio/crop-and-scale, and normalizes portrait video pixels to 720x1280 through a local canvas stream. Local preview and Xmax input share that stream and explicit format; fallback uses actual videoWidth/videoHeight rather than sensor settings. Cleanup releases canvas frame callbacks and the raw camera. No webcam or model testing performed.
-- Field-of-view correction: preserve the real 720x1280 portrait stream and its normalization. Remove only the additional preview object-fit:cover and SDK VideoContentMode.fill cropping; use contain/fit for the portrait video. This restores content previously cut by the tall page container without returning to a landscape video inside a portrait canvas. Does not expand the physical camera field of view. No camera or generation testing.
-- Visual direction revised after user rejected the parchment/bronze design. References inspected at The Row, Loro Piana and TOTEME. Centered Chinese serif wordmark; cool off-white/graphite, open garment gallery with generous image padding, one precise selection underline. No gold, paper texture, decorative double borders or extra copy. An original fashion still-life opening image (44 KB WebP) disappears entirely when the camera opens. Mobile artwork framing is independent of the unchanged portrait video pipeline. Start controls stay hidden until the camera is open. Selected-item changes retain nodes and category scroll; applying spinner and reduced-motion support retained. Asset and prompt recorded in design-assets.md.
-- Collection expanded from 8 to 16: shirts, cotton jacket, leather jacket, dress, suit, and shoes from DummyJSON and Fake Store API demo catalogs, stored as local compressed JPGs. No inference used to prepare assets.
-- Back-view assessment: installed SDK 1.1.3 RealtimeContextInit exposes one referencePath, not independent front/back inputs. Turning footage may produce inferred backs but correctness is unverified, especially prints, pockets, and closures. Do not promise accurate back reconstruction or add a misleading automatic back-view switch. Product-accurate back views need corresponding source views and verified model support.
-
-- Access-link correction: query-based links fix the fragile fragment/session-only transfer. Blank links still need authorization; preserve missing/expired error messages after camera opening and garment selection. Isolated authorization checks use fake tokens and forbid network; no camera or inference tests.
+- 目标：PC/手机摄像头实时换装；大面积画面、右侧窄衣橱，克制黑白视觉。用户要求手动停止、可切换模型、多窗口同时对比；禁止代理自行运行生成以节省积分。
+- 入口：`npm start`（localhost:5173、局域网 HTTPS:3443）；`npm run share` 或「启动手机公网体验.command」启动手机公网授权通道。原启动 command 仍用于本地应用。
+- 公开前端：https://chenfeiyu01.github.io/youzan-realtime-tryon/ 。源码 main、构建 gh-pages，`npm run build`。手机多模型链接带 bridge/grant query，由本地手机按钮或 share 命令生成；不要提交该完整链接。
+- 结构：src/main.js 管理多窗口、单摄像头与共同衣橱；src/models.js 模型注册与 4 窗上限；src/providers.js 封装 Xmax/Decart 的连接、换图和释放；src/runtime.js 在本地 API、受保护公网授权 API、旧 Xmax 静态凭证之间路由；server.mjs 提供 API 与凭证签发；scripts/start-bridge.mjs 管理 Cloudflare Quick Tunnel。
+- 模型：Xmax X2.1/X2.0（SDK 1.1.3）；Decart VTON 3.6/3.5、Lucy 2.6/2.5（@decartai/sdk 0.2.14，名称已在 SDK 本地注册表核实）。不启用额外收费的 fast mode。
+- 对比：最多 4 个页面内窗口，摄像头只采集一次，每个模型克隆独立轨道，使用同一件参考服饰。逐窗选择/开始/停止/关闭；全部开始、全部停止；运行中切模型先关闭旧连接再启动新模型。左上角可另开独立浏览器窗口；浏览器或上游账号可能限制实际并发。
+- 布局：单窗保留原大画面；PC 双窗并排、3/4 窗 2×2，手机双窗上下、3/4 窗 2×2。保持 portrait 720×1280 采集及 contain/fit，不再额外裁切视频。不同模型的真实输出、延迟与画质需用户实测。
+- 摄像头：src/camera.js 保留触屏方向检测和真正竖屏 canvas 流；20 fps、约720p。每个 SDK 使用轨道 clone，停止一窗不关闭其他窗口或本地预览。后台/离开页面仍停止连接并释放摄像头。
+- 手动停止：无播放倒计时、准备/首帧等待限时、60 积分试玩上限。Xmax 临时 Key 24 小时、必填 pointsLimit=2147483647、每 Key 并发 1；每个窗口单独签发。Decart 临时凭证按需签发、模型和浏览器 Origin 绑定，600 秒签发窗口，无 maxSessionDuration；过期不终止已经建立的 Decart 会话，后续鉴权按需刷新。账户余额和上游权限仍适用。
+- 凭据：XMAX_API_KEY、DECART_API_KEY 仅在忽略且权限 600 的 .env。原始 Key 不发送给网页、不进入源码/构建/Git。网页只收到签名临时凭证。Bridge grant 是访问授权 API 的随机能力凭证，位于 .local/bridge-access.json；完整分享链接与二维码不提交。
+- 公网授权：仅本机回环 5174 暴露 API；Cloudflare Quick Tunnel 将其转成 HTTPS。只接收 GitHub Pages Origin，验证 Authorization bearer，允许 CORS 预检；不提供 Vite、文件、永久 Key 或摄像头转发。电脑应用和 Tunnel 需保持运行；进程重开后 Quick Tunnel 域名可能变化，应使用新生成链接。没有部署常驻云后端。
+- 安全边界：全局最多 4 个未关闭/申请中的服务端会话。Xmax 停止时停用临时 Key，失败保留记录重试；Decart SDK disconnect，服务端移除本地记录（官方临时凭证不可提前撤销）。不是独立的 Decart 服务端断流保障。无后台充值或主动开启生成。
+- 素材：16 件参考服饰，上传 JPG/PNG/WebP，10MB 内；选择服饰只在已运行的模型窗口更新。衣橱名称仅作无障碍和悬停提示，无商品小字、标语或教程。视觉来源和 imagegen 开场静物的提示词在 design-assets.md。
+- 验证：语法和发布构建；两家原始 Key/bridge grant 排除；授权 API 配置、未授权拒绝、Decart 签发临时 token 后删除未使用会话；伪 SDK 离线检查窗口轨道独立、换图、单窗释放、连接中取消；runtime bridge 传递检查包含存储被禁用。没有开摄像头、WebRTC 或生成模型，也未做真实浏览器体验。
+- 未验证：真实设备连通/速度、上游账号并发、实际计费、服饰保真和转身背部。当前单图参考不能保证真实商品背面细节；不能承诺准确的印花/口袋/拉链背面重建。

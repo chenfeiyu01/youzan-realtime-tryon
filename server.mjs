@@ -1,12 +1,14 @@
 import http from 'node:http';
 import https from 'node:https';
-import { readFileSync, appendFileSync, existsSync, statSync, writeFileSync } from 'node:fs';
+import { readFileSync, appendFileSync, existsSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createServer as createViteServer } from 'vite';
 import QRCode from 'qrcode';
+import { createDecartClient } from '@decartai/sdk';
+import { MAX_VIEWS, modelFor } from './src/models.js';
 import { prepareCertificates } from './scripts/make-certs.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
@@ -17,6 +19,28 @@ try {
   }
 } catch {}
 const apiKey = process.env.XMAX_API_KEY || '';
+const decartApiKey = process.env.DECART_API_KEY || '';
+const decartClient = decartApiKey ? createDecartClient({ apiKey: decartApiKey }) : undefined;
+const brokerPort = Number(process.env.BROKER_PORT || 5174);
+const grantFile = path.join(root, '.local', 'bridge-access.json');
+mkdirSync(path.dirname(grantFile), { recursive: true });
+let bridgeGrant;
+try { bridgeGrant = JSON.parse(readFileSync(grantFile, 'utf8')).grant; } catch {}
+if (!bridgeGrant) { bridgeGrant = randomBytes(32).toString('hex'); writeFileSync(grantFile, JSON.stringify({ grant: bridgeGrant }), { mode: 0o600 }); }
+const bridgeAuthorized = req => {
+  const value = req.headers.authorization?.replace(/^Bearer /, '') || '';
+  return value.length === bridgeGrant.length && timingSafeEqual(Buffer.from(value), Buffer.from(bridgeGrant));
+};
+function bridgeShare() {
+  try {
+    const { url } = JSON.parse(readFileSync(path.join(root, '.local', 'bridge-public.json'), 'utf8'));
+    const relay = new URL(url);
+    if (relay.protocol !== 'https:' || !relay.hostname.endsWith('.trycloudflare.com')) return;
+    const link = new URL(publicURL);
+    link.search = new URLSearchParams({ v: 'compare9', bridge: relay.origin, grant: bridgeGrant }).toString();
+    return { url: link.href };
+  } catch {}
+}
 const port = Number(process.env.PORT || 5173);
 const httpsPort = Number(process.env.HTTPS_PORT || 3443);
 const baseURL = 'https://cloud.xmax.22duck.cn/open/api/v1';
@@ -26,6 +50,8 @@ const temporaryKeyPointsLimit = 2147483647;
 let sharedAccess;
 try { sharedAccess = JSON.parse(readFileSync(path.join(root, '.local', 'shared-access.json'), 'utf8')); } catch {}
 async function shareAccess() {
+  const bridge = bridgeShare();
+  if (bridge) return bridge;
   if (sharedAccess?.url) {
     const cachedURL = new URL(sharedAccess.url);
     const fragment = new URLSearchParams(cachedURL.hash.slice(1));
@@ -57,7 +83,7 @@ function diagnostic(event, data = {}) {
     appendFileSync(diagnosticsFile, JSON.stringify({ at: new Date().toISOString(), event, ...data }) + '\n', { mode: 0o600 });
   } catch {}
 }
-let issuing = false;
+let issuing = 0;
 let shutdown = false;
 const addresses = () => [...new Set(Object.values(networkInterfaces()).flat()
   .filter(x => x && x.family === 'IPv4' && !x.internal).map(x => x.address))];
@@ -83,12 +109,13 @@ async function upstream(route, method, data) {
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok || result.success !== true) {
-    const safeMessage = String(result.message || 'Xmax 请求失败').replaceAll(apiKey || '__none__', '[redacted]').slice(0, 200);
+    const safeMessage = String(result.message || 'Xmax 请求失败').replaceAll(apiKey || '__none__', '[redacted]').replaceAll(decartApiKey || '__none__', '[redacted]').slice(0, 200);
     throw new Error(`${safeMessage}（${result.code || response.status}）`);
   }
   return result.data;
 }
 async function revoke(session) {
+  if (session.provider === 'decart') { sessions.delete(session.id); return; }
   if (session.revoking) return session.revoking;
   session.revoking = (async () => {
     try {
@@ -119,32 +146,42 @@ const vite = await createViteServer({
   appType: 'spa',
 });
 
-async function handler(req, res) {
+async function handler(req, res, broker = false) {
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Permissions-Policy', 'camera=(self), microphone=()');
   res.setHeader('Cache-Control', 'no-store');
+  if (broker) {
+    const origin = req.headers.origin;
+    if (origin !== new URL(publicURL).origin) return json(res, 403, { error: '请求来源不匹配' });
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+    if (!bridgeAuthorized(req)) return json(res, 401, { error: '授权服务凭证无效，请从完整体验链接打开' });
+  }
   const url = new URL(req.url, `${req.socket.encrypted ? 'https' : 'http'}://${req.headers.host}`);
   // A one-time visit from the local machine or a QR pairing link grants an HttpOnly browser session.
   const host = url.hostname.replace(/^\[|\]$/g, '');
   const loopbackHost = ['localhost', '127.0.0.1', '::1'].includes(host);
-  if (url.pathname === '/' && (equal(url.searchParams.get('access')) || (local(req) && loopbackHost))) {
+  if (!broker && url.pathname === '/' && (equal(url.searchParams.get('access')) || (local(req) && loopbackHost))) {
     res.setHeader('Set-Cookie', `yz_access=${pairingToken}; HttpOnly; SameSite=Strict; Path=/${req.socket.encrypted ? '; Secure' : ''}`);
     if (url.searchParams.has('access')) { res.writeHead(303, { Location: '/' }); res.end(); return; }
   }
   if (url.pathname.startsWith('/api/')) {
-    if (!authorized(req)) return json(res, 401, { error: '请从电脑本机入口打开，手机请扫描电脑页面的二维码配对。' });
+    if (!broker && !authorized(req)) return json(res, 401, { error: '请从电脑本机入口打开，手机请扫描电脑页面的二维码配对。' });
     if (req.method !== 'GET') {
-      if (!req.headers.origin || req.headers.origin !== url.origin || req.headers['sec-fetch-site'] === 'cross-site') {
+      if (!req.headers.origin || (!broker && (req.headers.origin !== url.origin || req.headers['sec-fetch-site'] === 'cross-site'))) {
         return json(res, 403, { error: '请求来源不匹配，请刷新本页。' });
       }
     }
     try {
       if (url.pathname === '/api/config' && req.method === 'GET') {
-        return json(res, 200, { configured: Boolean(apiKey), model: 'x2.1',
-          phoneURLs: local(req) ? phoneURLs() : [], httpsAvailable: Boolean(tlsDir), publicURL });
+        return json(res, 200, { configured: Boolean(apiKey || decartApiKey), providers: { xmax: Boolean(apiKey), decart: Boolean(decartApiKey) }, maxViews: MAX_VIEWS,
+          phoneURLs: !broker && local(req) ? phoneURLs() : [], httpsAvailable: Boolean(tlsDir), publicURL });
       }
-      if (url.pathname === '/api/share-link' && req.method === 'POST' && local(req)) return json(res, 200, await shareAccess());
+      if (url.pathname === '/api/share-link' && req.method === 'POST' && (broker || local(req))) return json(res, 200, await shareAccess());
       if (url.pathname === '/api/diagnostics' && req.method === 'POST') {
         const data = await body(req);
         const allowed = ['prepare', 'connect', 'frame', 'update', 'error', 'network'];
@@ -164,28 +201,43 @@ async function handler(req, res) {
         res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'no-store' }); res.end(svg); return;
       }
       if (url.pathname === '/api/session' && req.method === 'POST') {
-        if (shutdown || issuing || sessions.size) return json(res, 409, { error: '已有试衣会话正在运行或关闭，请先停止，稍后再试。' });
-        if (!apiKey) return json(res, 503, { error: '请在本地 .env 中配置 XMAX_API_KEY 后重启。' });
-        await body(req);
-        issuing = true;
+        if (shutdown || sessions.size + issuing >= MAX_VIEWS) return json(res, 409, { error: '同时最多开启 4 个模型窗口，请先停止一个窗口。' });
+        const { modelId = 'xmax-2.1' } = await body(req);
+        const model = modelFor(modelId);
+        if (!model) return json(res, 400, { error: '模型不受支持' });
+        if ((model.provider === 'xmax' && !apiKey) || (model.provider === 'decart' && !decartClient)) return json(res, 503, { error: '当前模型尚未配置密钥' });
+        if (shutdown || sessions.size + issuing >= MAX_VIEWS) return json(res, 409, { error: '同时最多开启 4 个模型窗口，请先停止一个窗口。' });
+        issuing++;
         try {
-          const startedAt = Date.now();
-          const data = await upstream('/temporary-api-key', 'POST', {
-            expireSeconds: temporaryKeyLifetimeSeconds, pointsLimit: temporaryKeyPointsLimit, temporaryApiKeySessionLimit: 1,
-          });
-          diagnostic('credential', { ms: Date.now() - startedAt });
-          if (!data?.temporaryApiKey?.startsWith('tk-')) throw new Error('Xmax 未返回有效临时凭证');
-          const session = { id: randomBytes(20).toString('hex'), key: data.temporaryApiKey,
-            expiresAt: Date.parse(data.expireTimestamp), armed: false, playing: false };
-          sessions.set(session.id, session);
+          const id = randomBytes(20).toString('hex');
+          let key, expiresAt;
+          if (model.provider === 'decart') {
+            const token = await decartClient.tokens.create({ expiresIn: 600, allowedModels: [model.remote], allowedOrigins: [req.headers.origin] });
+            key = token.apiKey; expiresAt = Date.parse(token.expiresAt);
+          } else {
+            const data = await upstream('/temporary-api-key', 'POST', {
+              expireSeconds: temporaryKeyLifetimeSeconds, pointsLimit: temporaryKeyPointsLimit, temporaryApiKeySessionLimit: 1,
+            });
+            if (!data?.temporaryApiKey?.startsWith('tk-')) throw new Error('Xmax 未返回有效临时凭证');
+            key = data.temporaryApiKey; expiresAt = Date.parse(data.expireTimestamp);
+          }
+          const session = { id, key, expiresAt, model, provider: model.provider, armed: false, playing: false };
+          sessions.set(id, session);
           if (res.destroyed || shutdown) { await revoke(session); return; }
-          return json(res, 200, { id: session.id, temporaryApiKey: session.key });
-        } finally { issuing = false; }
+          return json(res, 200, { id, provider: model.provider, temporaryApiKey: key, expiresAt });
+        } finally { issuing--; }
       }
-      const match = url.pathname.match(/^\/api\/session\/([a-f0-9]{40})(\/(?:arm|ready))?$/);
+      const match = url.pathname.match(/^\/api\/session\/([a-f0-9]{40})(\/(?:arm|ready|token))?$/);
       if (match) {
         const session = sessions.get(match[1]);
         if (!session) return json(res, req.method === 'DELETE' || !match[2] ? 200 : 410, { stopped: true, error: '会话已结束，请重新开始' });
+        if (req.method === 'POST' && match[2] === '/token' && session.provider === 'decart') {
+          if (session.expiresAt < Date.now() + 30000) {
+            const token = await decartClient.tokens.create({ expiresIn: 600, allowedModels: [session.model.remote], allowedOrigins: [req.headers.origin] });
+            session.key = token.apiKey; session.expiresAt = Date.parse(token.expiresAt);
+          }
+          return json(res, 200, { apiKey: session.key, expiresAt: session.expiresAt });
+        }
         if (req.method === 'POST' && match[2] === '/arm') {
           if (session.armed) return json(res, 409, { error: '当前会话已连接' });
           session.armed = true; session.connectAt = Date.now();
@@ -205,8 +257,12 @@ async function handler(req, res) {
         if (req.method === 'POST' && !match[2]) { await revoke(session); return json(res, 200, { stopped: true }); }
       }
       return json(res, 404, { error: '接口不存在' });
-    } catch (error) { return json(res, 502, { error: error.message || '连接服务失败，请稍后手动重试。' }); }
+    } catch (error) {
+      const message = String(error.message || '连接服务失败，请稍后手动重试。').replaceAll(apiKey || '__none__', '[redacted]').replaceAll(decartApiKey || '__none__', '[redacted]');
+      return json(res, 502, { error: message.slice(0, 240) });
+    }
   }
+  if (broker) return json(res, 404, { error: '接口不存在' });
   // Expose only browser code, public assets and Vite dependencies, never project secrets/server source.
   if (/^\/(?:\.env|\.local|server\.mjs|scripts|package(?:-lock)?\.json|README|project_summary)/i.test(decodeURIComponent(url.pathname))) {
     res.writeHead(404); res.end(); return;
@@ -214,6 +270,8 @@ async function handler(req, res) {
   vite.middlewares(req, res, () => { res.writeHead(404); res.end(); });
 }
 
+const brokerServer = http.createServer((req, res) => { void handler(req, res, true).catch(() => json(res, 500, { error: '授权服务错误' })); });
+brokerServer.listen(brokerPort, '127.0.0.1', () => console.log('模型授权服务已启动'));
 const pcServer = http.createServer((req, res) => { void handler(req, res).catch(() => json(res, 500, { error: '本地服务错误' })); });
 pcServer.listen(port, '127.0.0.1', () => {
   console.log(`有赞实时换装 · PC 入口：http://localhost:${port}`);
@@ -225,7 +283,7 @@ if (tlsDir) {
     (req, res) => { void handler(req, res).catch(() => json(res, 500, { error: '本地服务错误' })); });
   phoneServer.listen(httpsPort, '0.0.0.0', () => console.log('手机入口已就绪；在 PC 页面点击「手机访问」查看二维码和证书说明。'));
 }
-for (const server of [pcServer, phoneServer].filter(Boolean)) server.on('error', error => {
+for (const server of [pcServer, phoneServer, brokerServer].filter(Boolean)) server.on('error', error => {
   console.error(error.code === 'EADDRINUSE' ? '端口被占用，请先关闭旧窗口里的服务或修改 .env 端口。' : '本地监听失败：' + error.code);
 });
 async function stopServer() {
@@ -233,7 +291,7 @@ async function stopServer() {
   shutdown = true;
   const forceExit = setTimeout(() => process.exit(1), 15000); forceExit.unref();
   await Promise.allSettled([...sessions.values()].map(revoke));
-  await vite.close(); pcServer.close(); phoneServer?.close();
+  await vite.close(); pcServer.close(); phoneServer?.close(); brokerServer.close();
   clearTimeout(forceExit); process.exit(0);
 }
 process.on('SIGINT', stopServer); process.on('SIGTERM', stopServer);
