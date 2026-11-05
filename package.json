@@ -1,0 +1,8 @@
+{
+  "name": "youzan-realtime-tryon",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": { "start": "node server.mjs", "prepare:phone": "node scripts/make-certs.mjs", "build": "vite build --base=./ --mode pages" },
+  "dependencies": { "@xmaxai/web-sdk": "1.1.3", "qrcode": "1.5.4", "vite": "6.4.1" }
+}
