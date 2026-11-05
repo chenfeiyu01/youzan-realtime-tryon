@@ -54,6 +54,6 @@ npm run share
 
 已完成发布构建、原始凭据排除、授权通路及离线生命周期检查。Decart 仅验证了临时凭证签发，没有开启摄像头、WebRTC 或调用生成模型；真实速度、效果和设备兼容性由用户体验。
 
-预设 16 件商品演示素材，支持上传 JPG/PNG/WebP。裤装与鞋履需相应部位完整入镜。当前单张参考图不保证商品背面的印花、口袋或拉链准确。开场视觉素材及提示词见 `design-assets.md`。
+预设 19 件商品演示素材（含 6 件新生成的低饱和设计参考服饰），支持上传 JPG/PNG/WebP。裤装与鞋履需相应部位完整入镜。当前单张参考图不保证商品背面的印花、口袋或拉链准确。开场视觉素材及提示词见 `design-assets.md`。
 
 官方资料：[Decart SDK](https://github.com/DecartAI/sdk)、[Decart 试衣示例](https://github.com/DecartAI/tryon-examples)、[Client Tokens](https://docs.platform.decart.ai/getting-started/client-tokens)、[Xmax SDK](https://github.com/Xmax-AI/XmaxSDK-Web)。

@@ -13,6 +13,7 @@ async function referenceBlob(item) {
   return referenceBlobs.get(item.id);
 }
 const promptFor = item => {
+  if (item.decartPrompt) return item.decartPrompt;
   const target = { tops: 'top', bottoms: 'bottoms', outfits: 'outfit', shoes: 'shoes' }[item.category] || 'outfit';
   return `Substitute the person's current ${target} with the exact ${target} in the reference image. Preserve garment color, texture, pattern and fit; preserve the person's identity, pose, remaining clothing and background.`;
 };

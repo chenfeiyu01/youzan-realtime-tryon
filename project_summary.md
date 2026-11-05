@@ -12,6 +12,8 @@
 - 凭据：XMAX_API_KEY、DECART_API_KEY 仅在忽略且权限 600 的 .env。原始 Key 不发送给网页、不进入源码/构建/Git。网页只收到签名临时凭证。Bridge grant 是访问授权 API 的随机能力凭证，位于 .local/bridge-access.json；完整分享链接与二维码不提交。
 - 公网授权：仅本机回环 5174 暴露 API；Cloudflare Quick Tunnel 将其转成 HTTPS。只接收 GitHub Pages Origin，验证 Authorization bearer，允许 CORS 预检；不提供 Vite、文件、永久 Key 或摄像头转发。电脑应用和 Tunnel 需保持运行；进程重开后 Quick Tunnel 域名可能变化，应使用新生成链接。没有部署常驻云后端。
 - 安全边界：全局最多 4 个未关闭/申请中的服务端会话。Xmax 停止时停用临时 Key，失败保留记录重试；Decart SDK disconnect，服务端移除本地记录（官方临时凭证不可提前撤销）。不是独立的 Decart 服务端断流保障。无后台充值或主动开启生成。
-- 素材：16 件参考服饰，上传 JPG/PNG/WebP，10MB 内；选择服饰只在已运行的模型窗口更新。衣橱名称仅作无障碍和悬停提示，无商品小字、标语或教程。视觉来源和 imagegen 开场静物的提示词在 design-assets.md。
+- 素材：19 件参考服饰，上传 JPG/PNG/WebP，10MB 内；选择服饰只在已运行的模型窗口更新。衣橱名称仅作无障碍和悬停提示，无商品小字、标语或教程。视觉来源和 imagegen 开场静物的提示词在 design-assets.md。
 - 验证：语法和发布构建；两家原始 Key/bridge grant 排除；授权 API 配置、未授权拒绝、公网 HTTPS/CORS 预检、Decart 签发临时 token 后删除未使用会话；伪 SDK 离线检查窗口轨道独立、换图、单窗释放、连接中取消；runtime bridge 传递检查包含存储被禁用。没有开摄像头、WebRTC 或生成模型，也未做真实浏览器体验。
 - 未验证：真实设备连通/速度、上游账号并发、实际计费、服饰保真和转身背部。当前单图参考不能保证真实商品背面细节；不能承诺准确的印花/口袋/拉链背面重建。
+
+- 衣橱更新：移除 collection-177 花卉长裙、collection-85 红格纹衬衫、collection-86 蓝色花卉衬衫及对应本地素材。新增 imagegen 独立生成的 6 张低饱和正面白底参考图：灰褐不对称西装、燕麦短夹克、炭灰斜领针织、雾绿褶裥衬衫、石灰褶裥阔腿裤、烟灰马甲套装；共 19 件（上衣8、裤装3、套装4、鞋履4）。新款带独立剪裁/颜色提示词；Decart 优先读取条目 decartPrompt。素材与生成提示词在 design-assets.md，未验证真实上身效果。
