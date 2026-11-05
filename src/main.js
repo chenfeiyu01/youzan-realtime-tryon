@@ -264,7 +264,8 @@ $('#upload-input').onchange = async event => {
     if (!preview.naturalWidth || !preview.naturalHeight) throw new Error('无法读取图片');
     objectURLs.add(image);
     const item = { id: crypto.randomUUID(), category: uploadCategory, name: file.name.replace(/\.[^.]+$/, '').slice(0, 20), image, file: normalized, prompt: categoryPrompts[uploadCategory] };
-    wardrobe.unshift(item); category = uploadCategory; selectItem(item); categoryScroll.set(category, 0); renderWardrobe(); notice('');
+    wardrobe.unshift(item); category = uploadCategory; selectItem(item); categoryScroll.set(category, 0); renderWardrobe();
+    const problem = configurationIssue(); notice(problem, Boolean(problem));
   } catch {
     URL.revokeObjectURL(image); notice('图片无法读取，请换一张 JPG、PNG 或 WebP 图片。', true);
   } finally {
