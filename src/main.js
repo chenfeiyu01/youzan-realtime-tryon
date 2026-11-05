@@ -82,6 +82,13 @@ function closeCamera() {
   camera?.getTracks().forEach(track => track.stop()); camera = undefined;
 }
 function notice(text, error = false) { $('#notice').textContent = error ? text : ''; $('#notice').hidden = !error || !text; $('#notice').classList.toggle('error', error); }
+function configurationIssue() {
+  if (!config || config.configured) return '';
+  if (!isHosted) return '本地 API Key 尚未配置，请填写 .env 后重启服务。';
+  return config.accessStatus === 'expired'
+    ? '体验授权已过期，请打开新的体验链接。'
+    : '此链接未携带体验授权，请打开完整体验链接。';
+}
 function stageStatus(text, live = false) { $('#stage-status').hidden = !live; $('#stage-status').setAttribute('aria-label', text); $('#stage-status').classList.toggle('live', live); }
 function errorText(error) {
   if (error?.name === 'NotAllowedError') return '摄像头权限未开启，请在浏览器地址栏允许摄像头。';
@@ -98,6 +105,7 @@ function syncControls() {
   $('#stop-button').disabled = phase === 'stopping';
   $('#stop-button span').textContent = phase === 'stopping' ? '正在停止' : '停止试衣';
   $('#start-button').disabled = !camera || !selected || !config?.configured || cameraBusy || Boolean(session) || phase !== 'idle';
+  $('#start-button').title = configurationIssue() || (!camera ? '请先开启摄像头' : '开始试衣');
   $('#duration').disabled = running || phase === 'stopping';
   $('#switch-camera').disabled = running || phase === 'stopping' || cameraBusy || !camera;
   $('#open-camera').disabled = cameraBusy;
@@ -157,7 +165,7 @@ function selectItem(item) {
   if (selected?.id === item.id && selected.id !== failedItemId) return;
   selected = item; failedItemId = undefined; ++selectionRevision; syncControls();
   if (phase === 'live') { clearTimeout(updateDebounce); updateDebounce = setTimeout(queueUpdate, 180); }
-  else notice('');
+  else notice(configurationIssue(), Boolean(configurationIssue()));
 }
 async function request(route, options = {}) {
   return apiRequest(route, options);
@@ -177,7 +185,7 @@ async function openCamera() {
     video.classList.toggle('mirrored', cameraFacing === 'user');
     await video.play();
     $('#stage').classList.add('has-camera'); $('#empty-state').hidden = true;
-    stageStatus('本地预览'); notice('');
+    stageStatus('本地预览'); notice(configurationIssue(), Boolean(configurationIssue()));
   } catch (error) {
     closeCamera(); $('#empty-state').hidden = false; $('#stage').classList.remove('has-camera');
     notice(errorText(error), true);
@@ -402,5 +410,5 @@ renderWardrobe(); syncControls();
 void loadSDK().catch(() => { sdkPromise = undefined; });
 request('/api/config').then(value => {
   config = value; syncControls();
-  if (!config.configured) notice(isHosted ? '请使用有效的体验链接打开' : '本地 API Key 尚未配置，请填写 .env 后重启服务。', true);
+  if (!config.configured) notice(configurationIssue(), true);
 }).catch(error => notice(errorText(error), true));

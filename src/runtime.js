@@ -30,6 +30,7 @@ export async function apiRequest(route, options = {}) {
     return data;
   }
   if (route === '/api/config') return { configured: validAccess(), hosted: true,
+    accessStatus: validAccess() ? 'valid' : access?.key ? 'expired' : 'missing',
     model: 'x2.1', durations: [10, 15, 30], connectionLimitSeconds,
     phoneURLs: [], httpsAvailable: true, publicURL: location.origin + location.pathname };
   if (route === '/api/diagnostics') return { ok: true };
