@@ -1,6 +1,7 @@
 import './style.css';
 import { categories, wardrobe, categoryPrompts } from './wardrobe.js';
 import { apiRequest, isHosted } from './runtime.js';
+import { createCameraSource } from './camera.js';
 
 const icons = {
   camera: '<rect x="3" y="6" width="18" height="14" rx="3"/><path d="m8 6 1.5-3h5L16 6"/><circle cx="12" cy="13" r="4"/>',
@@ -47,6 +48,7 @@ let category = 'tops';
 let selected = wardrobe[0];
 let appliedId;
 let camera;
+let cameraSource;
 let cameraBusy = false;
 let cameraFacing = 'user';
 let config;
@@ -73,6 +75,10 @@ const trace = (event, fields = {}) => {
 const uploaded = new Map();
 const objectURLs = new Set();
 const active = () => phase === 'starting' || phase === 'live';
+function closeCamera() {
+  cameraSource?.close(); cameraSource = undefined;
+  camera?.getTracks().forEach(track => track.stop()); camera = undefined;
+}
 function notice(text, error = false) { $('#notice').textContent = error ? text : ''; $('#notice').hidden = !error || !text; $('#notice').classList.toggle('error', error); }
 function stageStatus(text, live = false) { $('#stage-status').hidden = !live; $('#stage-status').setAttribute('aria-label', text); $('#stage-status').classList.toggle('live', live); }
 function errorText(error) {
@@ -132,19 +138,20 @@ async function openCamera() {
   void loadSDK().catch(() => { sdkPromise = undefined; });
   try {
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) throw new Error('请使用 Safari 或 Chrome 的 HTTPS 页面');
-    camera?.getTracks().forEach(track => track.stop());
-    const mobile = matchMedia('(max-width: 760px)').matches;
-    camera = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
-      facingMode: { ideal: cameraFacing }, width: { ideal: mobile ? 720 : 1280 },
-      height: { ideal: mobile ? 1280 : 720 }, frameRate: { ideal: 20, max: 24 },
-    } });
-    if (document.hidden) { camera.getTracks().forEach(track => track.stop()); camera = undefined; return; }
+    closeCamera();
+    cameraSource = await createCameraSource(cameraFacing);
+    camera = cameraSource.stream;
+    if (document.hidden) { closeCamera(); return; }
+    $('#stage').dataset.capture = cameraSource.portrait ? 'portrait' : 'landscape';
     const video = $('#camera-preview'); video.srcObject = camera;
     video.classList.toggle('mirrored', cameraFacing === 'user');
     await video.play();
     $('#stage').classList.add('has-camera'); $('#empty-state').hidden = true;
     stageStatus('本地预览'); notice('');
-  } catch (error) { camera?.getTracks().forEach(track => track.stop()); camera = undefined; notice(errorText(error), true); }
+  } catch (error) {
+    closeCamera(); $('#empty-state').hidden = false; $('#stage').classList.remove('has-camera');
+    notice(errorText(error), true);
+  }
   finally { cameraBusy = false; syncControls(); }
 }
 async function referenceFor(item, ownClient) {
@@ -216,13 +223,13 @@ async function start() {
     connection('正在准备服饰参考图…');
     const referencePath = await referenceFor(initialItem, client); assertCurrent(run);
     const track = camera.getVideoTracks()[0];
-    const settings = track.getSettings();
+    const settings = cameraSource.format;
     step = 'rtc';
     localStream = await manager.createExternalVideoStream({ videoTrack: track,
       videoFormat: new sdk.RealtimeVideoFormat({ width: settings.width || 1280, height: settings.height || 720,
-        fps: Math.min(settings.frameRate || 20, 24), minimumBitrate: 300, maximumBitrate: 1600 }) });
+        fps: settings.fps, minimumBitrate: 300, maximumBitrate: 1600 }) });
     assertCurrent(run);
-    outputView = new sdk.XmaxRealtimeVideoView({ videoContentMode: sdk.VideoContentMode.fit, isInteractionEnabled: false, fadeInDurationMs: 0 });
+    outputView = new sdk.XmaxRealtimeVideoView({ videoContentMode: cameraSource.portrait ? sdk.VideoContentMode.fill : sdk.VideoContentMode.fit, isInteractionEnabled: false, fadeInDurationMs: 0 });
     outputView.isMirrored = cameraFacing === 'user';
     outputView.element.style.cssText = 'width:100%;height:100%;background:transparent'; outputView.attach($('#sdk-output'));
     await request(`/api/session/${session.id}/arm`, { method: 'POST', body: '{}' }); assertCurrent(run);
@@ -348,7 +355,7 @@ $('#phone-button').onclick = async () => {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     if (active()) void stop('切换到后台，试衣已自动停止。');
-    camera?.getTracks().forEach(track => track.stop()); camera = undefined; $('#camera-preview').srcObject = null;
+    closeCamera(); $('#camera-preview').srcObject = null;
     $('#stage').classList.remove('has-camera'); $('#empty-state').hidden = false; syncControls();
   }
 });
@@ -356,7 +363,7 @@ window.addEventListener('pagehide', () => {
   ++generation; clearInterval(timer);
   if (session && !isHosted) navigator.sendBeacon(`/api/session/${session.id}`, new Blob(['{}'], { type: 'application/json' }));
   void manager?.close().catch(() => {});
-  camera?.getTracks().forEach(track => track.stop()); objectURLs.forEach(url => URL.revokeObjectURL(url));
+  closeCamera(); objectURLs.forEach(url => URL.revokeObjectURL(url));
 });
 renderWardrobe(); syncControls();
 void loadSDK().catch(() => { sdkPromise = undefined; });
