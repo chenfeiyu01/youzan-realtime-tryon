@@ -5,7 +5,7 @@
 - 公开前端：https://chenfeiyu01.github.io/youzan-realtime-tryon/ 。源码 main、构建 gh-pages，`npm run build`。手机多模型链接带 bridge/grant query，由本地手机按钮或 share 命令生成；不要提交该完整链接。
 - 结构：src/main.js 管理多窗口、单摄像头与共同衣橱；src/models.js 模型注册与 4 窗上限；src/providers.js 封装 Xmax/Decart 的连接、换图和释放；src/runtime.js 在本地 API、受保护公网授权 API、旧 Xmax 静态凭证之间路由；server.mjs 提供 API 与凭证签发；scripts/start-bridge.mjs 管理 Cloudflare Quick Tunnel。
 - 模型：Xmax X2.1/X2.0（SDK 1.1.3）；Decart VTON 3.6/3.5、Lucy 2.6/2.5（@decartai/sdk 0.2.14，名称已在 SDK 本地注册表核实）。不启用额外收费的 fast mode。
-- 对比：最多 4 个页面内窗口，摄像头只采集一次，每个模型克隆独立轨道，使用同一件参考服饰。逐窗选择/开始/停止/关闭；全部开始、全部停止；运行中切模型先关闭旧连接再启动新模型。左上角可另开独立浏览器窗口；浏览器或上游账号可能限制实际并发。
+- 对比：最多 4 个页面内窗口，摄像头只采集一次，每个模型克隆独立轨道，使用同一件参考服饰。逐窗选择/开始/停止/关闭；全部开始、全部停止；运行中切模型先关闭旧连接再启动新模型。左上角可另开独立浏览器窗口；同一组独立窗口经随机 room 的 BroadcastChannel 同步商品选择和上传 File；浏览器或上游账号可能限制实际并发。
 - 布局：单窗保留原大画面；PC 双窗并排、3/4 窗 2×2，手机双窗上下、3/4 窗 2×2。保持 portrait 720×1280 采集及 contain/fit，不再额外裁切视频。不同模型的真实输出、延迟与画质需用户实测。
 - 摄像头：src/camera.js 保留触屏方向检测和真正竖屏 canvas 流；20 fps、约720p。每个 SDK 使用轨道 clone，停止一窗不关闭其他窗口或本地预览。后台/离开页面仍停止连接并释放摄像头。
 - 手动停止：无播放倒计时、准备/首帧等待限时、60 积分试玩上限。Xmax 临时 Key 24 小时、必填 pointsLimit=2147483647、每 Key 并发 1；每个窗口单独签发。Decart 临时凭证按需签发、模型和浏览器 Origin 绑定，600 秒签发窗口，无 maxSessionDuration；过期不终止已经建立的 Decart 会话，后续鉴权按需刷新。账户余额和上游权限仍适用。
@@ -13,5 +13,5 @@
 - 公网授权：仅本机回环 5174 暴露 API；Cloudflare Quick Tunnel 将其转成 HTTPS。只接收 GitHub Pages Origin，验证 Authorization bearer，允许 CORS 预检；不提供 Vite、文件、永久 Key 或摄像头转发。电脑应用和 Tunnel 需保持运行；进程重开后 Quick Tunnel 域名可能变化，应使用新生成链接。没有部署常驻云后端。
 - 安全边界：全局最多 4 个未关闭/申请中的服务端会话。Xmax 停止时停用临时 Key，失败保留记录重试；Decart SDK disconnect，服务端移除本地记录（官方临时凭证不可提前撤销）。不是独立的 Decart 服务端断流保障。无后台充值或主动开启生成。
 - 素材：16 件参考服饰，上传 JPG/PNG/WebP，10MB 内；选择服饰只在已运行的模型窗口更新。衣橱名称仅作无障碍和悬停提示，无商品小字、标语或教程。视觉来源和 imagegen 开场静物的提示词在 design-assets.md。
-- 验证：语法和发布构建；两家原始 Key/bridge grant 排除；授权 API 配置、未授权拒绝、Decart 签发临时 token 后删除未使用会话；伪 SDK 离线检查窗口轨道独立、换图、单窗释放、连接中取消；runtime bridge 传递检查包含存储被禁用。没有开摄像头、WebRTC 或生成模型，也未做真实浏览器体验。
+- 验证：语法和发布构建；两家原始 Key/bridge grant 排除；授权 API 配置、未授权拒绝、公网 HTTPS/CORS 预检、Decart 签发临时 token 后删除未使用会话；伪 SDK 离线检查窗口轨道独立、换图、单窗释放、连接中取消；runtime bridge 传递检查包含存储被禁用。没有开摄像头、WebRTC 或生成模型，也未做真实浏览器体验。
 - 未验证：真实设备连通/速度、上游账号并发、实际计费、服饰保真和转身背部。当前单图参考不能保证真实商品背面细节；不能承诺准确的印花/口袋/拉链背面重建。

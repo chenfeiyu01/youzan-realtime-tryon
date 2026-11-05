@@ -44,6 +44,8 @@ const $ = selector => document.querySelector(selector);
 let category = 'tops', selected = wardrobe[0], camera, cameraSource, cameraBusy = false, cameraFacing = 'user', config;
 let selectionRevision = 0, updateDebounce;
 const panes = [];
+const syncRoom = new URLSearchParams(location.search).get('room') || crypto.randomUUID();
+let clothingChannel;
 const categoryScroll = new Map(), objectURLs = new Set();
 const busy = pane => ['starting', 'live', 'stopping'].includes(pane.phase);
 const active = () => panes.some(busy);
@@ -171,13 +173,17 @@ function queueUpdate(pane) {
     finally { syncControls(); }
   });
 }
-function selectItem(item) {
+function selectItem(item, broadcast = true) {
   if (selected?.id === item.id && !panes.some(p => p.failedId === item.id)) return;
   selected = item; ++selectionRevision;
   try { localStorage.setItem('youzan-selected-item', item.id); } catch {}
   for (const pane of panes) pane.failedId = undefined;
   clearTimeout(updateDebounce); updateDebounce = setTimeout(() => panes.forEach(queueUpdate), 180);
   syncControls();
+  if (broadcast) sendItem(item);
+}
+function sendItem(item) {
+  clothingChannel?.postMessage({ type: 'selection', item: { id: item.id, category: item.category, name: item.name, image: item.file ? undefined : item.image, remote: item.remote, prompt: item.prompt, file: item.file } });
 }
 async function openCamera() {
   if (cameraBusy || active()) return;
@@ -240,6 +246,7 @@ $('#switch-camera').onclick = async () => { if (!active()) { cameraFacing = came
 $('#add-view').onclick = () => addPane(panes.some(p => p.model.provider === 'xmax') ? 'decart-vton-3.6' : 'xmax-2.1');
 $('#new-window').onclick = () => {
   const url = new URL(location.href); url.searchParams.set('model', panes[0].model.id); url.searchParams.set('item', selected.id);
+  url.searchParams.set('room', syncRoom);
   window.open(url.href, '_blank', 'popup,width=1000,height=850,noopener,noreferrer');
 };
 $('#upload-button').onclick = () => $('#upload-input').click();
@@ -297,6 +304,7 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => {
   clearTimeout(updateDebounce); for (const pane of panes) void stopPane(pane);
+  clothingChannel?.close();
   closeCamera(); objectURLs.forEach(url => URL.revokeObjectURL(url));
 });
 const initial = new URLSearchParams(location.search);
@@ -304,6 +312,20 @@ let remembered;
 try { remembered = localStorage.getItem('youzan-selected-item'); } catch {}
 selected = wardrobe.find(item => item.id === (initial.get('item') || remembered)) || wardrobe[0]; category = selected.category;
 renderWardrobe(); addPane(initial.get('model') || 'xmax-2.1');
+try {
+  clothingChannel = new BroadcastChannel(`youzan-fitting-${syncRoom}`);
+  clothingChannel.onmessage = ({ data }) => {
+    if (data?.type === 'request') { const item = wardrobe.find(item => item.id === data.id); if (item) sendItem(item); return; }
+    if (data?.type !== 'selection' || !data.item || data.item.id === selected.id) return;
+    let item = wardrobe.find(item => item.id === data.item.id);
+    if (!item && data.item.file instanceof Blob && data.item.file.size <= 10 * 1024 * 1024 && ['image/jpeg', 'image/png', 'image/webp'].includes(data.item.file.type)) {
+      const image = URL.createObjectURL(data.item.file); objectURLs.add(image);
+      item = { ...data.item, image }; wardrobe.unshift(item);
+    }
+    if (item) { category = item.category; selectItem(item, false); renderWardrobe(); }
+  };
+  if (initial.get('item')) clothingChannel.postMessage({ type: 'request', id: initial.get('item') });
+} catch {}
 request('/api/config').then(value => {
   config = value; syncControls();
   const problem = configurationIssue(); if (problem) notice(problem, true);
