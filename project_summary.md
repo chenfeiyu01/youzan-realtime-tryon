@@ -14,3 +14,14 @@
 - 诊断：`.local/connection-events.jsonl` 仅记录阶段耗时和数值错误码，无密钥、商品图或摄像头画面。未取得真实失败日志，网络失败与卡顿原因仍待用户实测证据。
 - 验证约束：用户明确禁止测试以节省积分。未运行构建、类型检查、浏览器或推理测试，也没有向 Xmax 发送任何带用户 Key 的请求。依赖安装与官方公开素材下载属于准备工作。
 - 未验证项：真实 Key 有效性/额度、RTC 连通性、PC/手机摄像头、Safari/Android 系统信任设置、商品细节与鞋履效果、实际计费与终止行为。交由用户手动体验。
+
+## GitHub Pages
+
+- Repository: https://github.com/chenfeiyu01/youzan-realtime-tryon
+- Pages: https://chenfeiyu01.github.io/youzan-realtime-tryon/
+- Source branch: main. Build output branch: gh-pages. Build: npm run build.
+- Hosted runtime: src/runtime.js uses a limited temporary token delivered only in the URL fragment; no permanent credential is in source or build output. Fragment is removed after import and retained only in browser sessionStorage.
+- Demo access: one-hour expiry, shared 60-credit cap, one concurrent session; .local/shared-access.json is local only and ignored. Do not commit or log its URL.
+- On static Pages there is no independent server watchdog or per-session token revocation; SDK close, frontend timers, token expiry and shared provider quota bound usage. Local runtime retains the backend watchdog.
+- The desktop phone button can issue or reuse a limited public Pages link. No certificate or same-Wi-Fi requirement for the hosted page.
+- Publication build and credential-exclusion scan completed; no webcam or generation test performed. Issuing demo credentials is an operational action, not a generation call.
