@@ -229,7 +229,7 @@ async function start() {
       videoFormat: new sdk.RealtimeVideoFormat({ width: settings.width || 1280, height: settings.height || 720,
         fps: settings.fps, minimumBitrate: 300, maximumBitrate: 1600 }) });
     assertCurrent(run);
-    outputView = new sdk.XmaxRealtimeVideoView({ videoContentMode: cameraSource.portrait ? sdk.VideoContentMode.fill : sdk.VideoContentMode.fit, isInteractionEnabled: false, fadeInDurationMs: 0 });
+    outputView = new sdk.XmaxRealtimeVideoView({ videoContentMode: sdk.VideoContentMode.fit, isInteractionEnabled: false, fadeInDurationMs: 0 });
     outputView.isMirrored = cameraFacing === 'user';
     outputView.element.style.cssText = 'width:100%;height:100%;background:transparent'; outputView.attach($('#sdk-output'));
     await request(`/api/session/${session.id}/arm`, { method: 'POST', body: '{}' }); assertCurrent(run);
