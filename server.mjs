@@ -9,6 +9,7 @@ import { createServer as createViteServer } from 'vite';
 import QRCode from 'qrcode';
 import { createDecartClient } from '@decartai/sdk';
 import { MAX_VIEWS, modelFor } from './src/models.js';
+import { cutoutAvailable, removeGarmentBackground } from './server/cutout.mjs';
 import { prepareCertificates } from './scripts/make-certs.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
@@ -84,6 +85,7 @@ function diagnostic(event, data = {}) {
   } catch {}
 }
 let issuing = 0;
+let cutoutBusy = false;
 let shutdown = false;
 const addresses = () => [...new Set(Object.values(networkInterfaces()).flat()
   .filter(x => x && x.family === 'IPv4' && !x.internal).map(x => x.address))];
@@ -142,7 +144,7 @@ try { tlsDir = prepareCertificates(root); }
 catch { console.error('手机 HTTPS 证书准备失败；PC 本机入口仍可运行。请安装 openssl 后重启。'); }
 const vite = await createViteServer({
   root, configFile: false,
-  server: { middlewareMode: true, hmr: false, allowedHosts: true, fs: { deny: ['**/.env*', '**/.local/**', '**/server.mjs', '**/scripts/**'] } },
+  server: { middlewareMode: true, hmr: false, allowedHosts: true, fs: { deny: ['**/.env*', '**/.local/**', '**/server.mjs', '**/server/**', '**/scripts/**'] } },
   appType: 'spa',
 });
 
@@ -178,10 +180,31 @@ async function handler(req, res, broker = false) {
     }
     try {
       if (url.pathname === '/api/config' && req.method === 'GET') {
-        return json(res, 200, { configured: Boolean(apiKey || decartApiKey), providers: { xmax: Boolean(apiKey), decart: Boolean(decartApiKey) }, maxViews: MAX_VIEWS,
+        return json(res, 200, { configured: Boolean(apiKey || decartApiKey), providers: { xmax: Boolean(apiKey), decart: Boolean(decartApiKey) }, maxViews: MAX_VIEWS, cutout: cutoutAvailable(),
           phoneURLs: !broker && local(req) ? phoneURLs() : [], httpsAvailable: Boolean(tlsDir), publicURL });
       }
       if (url.pathname === '/api/share-link' && req.method === 'POST' && (broker || local(req))) return json(res, 200, await shareAccess());
+      if (url.pathname === '/api/garment/cutout' && req.method === 'POST') {
+        if (cutoutBusy) return json(res, 409, { error: '正在处理另一张图片，请稍后重试' });
+        if (!cutoutAvailable()) return json(res, 503, { error: '抠图暂不可用，可先使用原图' });
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(req.headers['content-type']?.split(';')[0])) return json(res, 415, { error: '请选择 JPG、PNG 或 WebP 图片' });
+        cutoutBusy = true;
+        try {
+          const chunks = []; let size = 0;
+          for await (const chunk of req) {
+            size += chunk.length;
+            if (size > 10 * 1024 * 1024) return json(res, 413, { error: '图片不能超过 10 MB' });
+            chunks.push(chunk);
+          }
+          if (!size) return json(res, 400, { error: '图片内容为空' });
+          const output = await removeGarmentBackground(Buffer.concat(chunks));
+          if (!res.destroyed) { res.writeHead(200, { 'Content-Type': 'image/png' }); res.end(output); }
+          return;
+        } catch (error) {
+          const message = String(error.message || '');
+          return json(res, 422, { error: /^(图片尺寸太小|未识别到清晰主体|抠图服务尚未准备好)/.test(message) ? message : '抠图失败，可使用原图或重试' });
+        } finally { cutoutBusy = false; }
+      }
       if (url.pathname === '/api/diagnostics' && req.method === 'POST') {
         const data = await body(req);
         const allowed = ['prepare', 'connect', 'frame', 'update', 'error', 'network'];
@@ -264,7 +287,7 @@ async function handler(req, res, broker = false) {
   }
   if (broker) return json(res, 404, { error: '接口不存在' });
   // Expose only browser code, public assets and Vite dependencies, never project secrets/server source.
-  if (/^\/(?:\.env|\.local|server\.mjs|scripts|package(?:-lock)?\.json|README|project_summary)/i.test(decodeURIComponent(url.pathname))) {
+  if (/^\/(?:\.env|\.local|server(?:\/|\.mjs)|scripts|package(?:-lock)?\.json|README|project_summary)/i.test(decodeURIComponent(url.pathname))) {
     res.writeHead(404); res.end(); return;
   }
   vite.middlewares(req, res, () => { res.writeHead(404); res.end(); });

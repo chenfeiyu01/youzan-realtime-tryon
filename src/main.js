@@ -257,17 +257,28 @@ $('#upload-input').onchange = async event => {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(mime) || !file.size || file.size > 10 * 1024 * 1024) { notice('请选择 10 MB 以内的 JPG、PNG 或 WebP 衣服图片。', true); return; }
   const uploadCategory = category;
   const normalized = file.type ? file : new File([file], file.name, { type: mime });
-  const image = URL.createObjectURL(normalized);
+  let image;
   const button = $('#upload-button'); button.disabled = true; button.setAttribute('aria-busy', 'true'); button.querySelector('span').textContent = '读取中';
   try {
-    const preview = new Image(); preview.src = image; await preview.decode();
-    if (!preview.naturalWidth || !preview.naturalHeight) throw new Error('无法读取图片');
+    let chosen = normalized;
+    if (config?.cutout) {
+      const { editGarmentImage } = await import('./cutout-editor.js');
+      button.querySelector('span').textContent = '处理中';
+      chosen = await editGarmentImage(normalized);
+    } else {
+      const previewURL = URL.createObjectURL(normalized);
+      try { const preview = new Image(); preview.src = previewURL; await preview.decode(); }
+      finally { URL.revokeObjectURL(previewURL); }
+    }
+    if (!chosen) return;
+    image = URL.createObjectURL(chosen);
     objectURLs.add(image);
-    const item = { id: crypto.randomUUID(), category: uploadCategory, name: file.name.replace(/\.[^.]+$/, '').slice(0, 20), image, file: normalized, prompt: categoryPrompts[uploadCategory] };
+    const item = { id: crypto.randomUUID(), category: uploadCategory, name: file.name.replace(/\.[^.]+$/, '').slice(0, 20), image, file: chosen, prompt: categoryPrompts[uploadCategory] };
     wardrobe.unshift(item); category = uploadCategory; selectItem(item); categoryScroll.set(category, 0); renderWardrobe();
     const problem = configurationIssue(); notice(problem, Boolean(problem));
   } catch {
-    URL.revokeObjectURL(image); notice('图片无法读取，请换一张 JPG、PNG 或 WebP 图片。', true);
+    if (image) { URL.revokeObjectURL(image); objectURLs.delete(image); }
+    notice('图片无法读取，请换一张 JPG、PNG 或 WebP 图片。', true);
   } finally {
     button.disabled = false; button.removeAttribute('aria-busy'); button.querySelector('span').textContent = '上传衣服';
   }

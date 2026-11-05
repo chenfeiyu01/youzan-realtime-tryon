@@ -54,6 +54,14 @@ npm run share
 
 已完成发布构建、原始凭据排除、授权通路及离线生命周期检查。Decart 仅验证了临时凭证签发，没有开启摄像头、WebRTC 或调用生成模型；真实速度、效果和设备兼容性由用户体验。
 
-预设 19 件商品演示素材（含 6 件新生成的低饱和设计参考服饰），支持上传 JPG/PNG/WebP。裤装与鞋履需相应部位完整入镜。当前单张参考图不保证商品背面的印花、口袋或拉链准确。开场视觉素材及提示词见 `design-assets.md`。
+预设 21 件商品演示素材（含 6 件新生成的低饱和设计参考服饰），支持上传 JPG/PNG/WebP。裤装与鞋履需相应部位完整入镜。当前单张参考图不保证商品背面的印花、口袋或拉链准确。开场视觉素材及提示词见 `design-assets.md`。
 
 官方资料：[Decart SDK](https://github.com/DecartAI/sdk)、[Decart 试衣示例](https://github.com/DecartAI/tryon-examples)、[Client Tokens](https://docs.platform.decart.ai/getting-started/client-tokens)、[Xmax SDK](https://github.com/Xmax-AI/XmaxSDK-Web)。
+
+## 上传后抠图
+
+运行 `npm run prepare:cutout` 一次准备本地模型。服务重启后，上传图片会进入原图/抠图预览，可擦除、还原、重置，确认后才加入衣橱；可直接使用原图或取消。若后端未准备好，则继续使用原图上传。抠图使用电脑本地 CPU，不调用两家试衣模型；手机图片经受保护的授权通道发到这台电脑，不做图片日志或文件留存。通用去背景不等于自动服饰分割，模特图可能需要手动擦掉人物区域，不补造被遮挡的服装。
+
+模型：[U2netp 官方文件](https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx)，校验值来自 [rembg 实现](https://github.com/danielgatis/rembg/blob/main/rembg/sessions/u2netp.py)。
+
+已加入高梵云锦瑞锦黑、瑞锦白1号两色长款羽绒服；素材来源及辅助提取提示词见 `design-assets.md`。

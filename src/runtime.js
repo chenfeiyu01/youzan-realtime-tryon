@@ -91,3 +91,16 @@ export async function apiRequest(route, options = {}) {
   }
   throw new Error('不支持的操作');
 }
+
+export async function cutoutImage(file, { signal } = {}) {
+  if (isHosted && !bridge) throw new Error('请从新版多模型链接打开抠图功能');
+  const response = await fetch((bridge ? bridge.url : '') + '/api/garment/cutout', {
+    method: 'POST', body: file, signal: signal || AbortSignal.timeout(90000),
+    headers: { 'Content-Type': file.type, ...(bridge ? { Authorization: `Bearer ${bridge.grant}` } : {}) },
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || '抠图失败，可使用原图或重试');
+  }
+  return response.blob();
+}
