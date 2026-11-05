@@ -71,8 +71,9 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
 .categories button:after { content: ''; position: absolute; left: 12px; right: 14px; bottom: 4px; height: 1px; background: var(--ink); transform: scaleX(0); transform-origin: left; transition: transform .3s var(--ease); }
 .categories button.selected { color: var(--ink); }
 .categories button.selected:after { transform: scaleX(1); }
-.wardrobe-heading .icon-button { width: 36px; height: 32px; margin-right: -7px; }
-.wardrobe-heading .icon-button .icon { width: 19px; height: 19px; }
+.upload-button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; padding: 10px 7px; background: #191919; color: #fff; font-size: 11px; letter-spacing: 1px; transition: background .2s, opacity .2s; }
+.upload-button .icon { width: 15px; height: 15px; }
+.upload-button:active { background: #484845; }
 .garments { display: grid; grid-template-columns: 1fr; gap: 18px; align-content: start; overflow: auto; min-height: 0; padding: 0 0 12px; overscroll-behavior: contain; scrollbar-width: none; }
 .garments::-webkit-scrollbar { display: none; }
 .garment { padding: 0; min-width: 0; background: none; animation: garment-arrive .45s var(--ease) both; animation-delay: var(--arrival, 0ms); }
@@ -137,8 +138,8 @@ details li { margin: 9px 0; }
   .categories { gap: 0 2px; }
   .categories button { font-size: 10px; letter-spacing: .5px; min-height: 36px; padding: 10px 0; }
   .categories button:after { left: 6px; right: 7px; bottom: 3px; }
-  .wardrobe-heading .icon-button { width: 32px; margin-right: -5px; height: 32px; }
-  .wardrobe-heading .icon-button .icon { width: 17px; height: 17px; }
+  .upload-button { gap: 4px; font-size: 10px; letter-spacing: 0; padding-inline: 4px; }
+  .upload-button .icon { width: 12px; height: 12px; }
   .garments { gap: 12px; }
   .garment-picture { aspect-ratio: 3/4; }
   .garment-picture img { padding: 8%; }

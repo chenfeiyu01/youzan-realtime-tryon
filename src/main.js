@@ -34,8 +34,8 @@ document.querySelector('#app').innerHTML = `
       <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
     </section>
     <aside class="wardrobe" aria-label="服饰选择">
-      <div class="wardrobe-heading"><nav class="categories" id="categories" aria-label="服饰分类"></nav><button class="icon-button" id="upload-button" title="上传商品图" aria-label="上传商品图">${icon('plus')}</button></div>
-      <div class="garments" id="garments"></div><input type="file" id="upload-input" accept="image/jpeg,image/png,image/webp" hidden />
+      <div class="wardrobe-heading"><nav class="categories" id="categories" aria-label="服饰分类"></nav><button class="upload-button" id="upload-button" title="上传自己的衣服图片" aria-label="上传自己的衣服图片">${icon('plus')}<span>上传衣服</span></button></div>
+      <div class="garments" id="garments"></div><input type="file" id="upload-input" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" aria-label="选择衣服图片" hidden />
     </aside>
   </main>
   <dialog id="phone-dialog"><button class="dialog-close icon-button" id="close-dialog" aria-label="关闭">${icon('close')}</button><h2>手机访问</h2><p>扫码打开</p><div id="phone-content"></div><details><summary>首次连接</summary><ol><li>将「有赞实时换装-手机证书.cer」发送到手机并安装。</li><li>iPhone：设置 → 通用 → 关于本机 → 证书信任设置，信任「Youzan Local Try-On CA」。Android：在安全设置中安装 CA 证书。</li><li>用 Safari 或 Chrome 扫码打开。</li></ol></details></dialog>
@@ -250,13 +250,26 @@ $('#new-window').onclick = () => {
   window.open(url.href, '_blank', 'popup,width=1000,height=850,noopener,noreferrer');
 };
 $('#upload-button').onclick = () => $('#upload-input').click();
-$('#upload-input').onchange = event => {
+$('#upload-input').onchange = async event => {
   const file = event.target.files?.[0]; event.target.value = '';
   if (!file) return;
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) { notice('请选择 10 MB 以内的 JPG、PNG 或 WebP 商品图。', true); return; }
-  const image = URL.createObjectURL(file); objectURLs.add(image);
-  const item = { id: crypto.randomUUID(), category, name: file.name.replace(/\.[^.]+$/, '').slice(0, 20), image, file, prompt: categoryPrompts[category] };
-  wardrobe.unshift(item); selectItem(item); categoryScroll.set(category, 0); renderWardrobe();
+  const mime = file.type || ({ jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }[file.name.split('.').pop().toLowerCase()]);
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(mime) || !file.size || file.size > 10 * 1024 * 1024) { notice('请选择 10 MB 以内的 JPG、PNG 或 WebP 衣服图片。', true); return; }
+  const uploadCategory = category;
+  const normalized = file.type ? file : new File([file], file.name, { type: mime });
+  const image = URL.createObjectURL(normalized);
+  const button = $('#upload-button'); button.disabled = true; button.setAttribute('aria-busy', 'true'); button.querySelector('span').textContent = '读取中';
+  try {
+    const preview = new Image(); preview.src = image; await preview.decode();
+    if (!preview.naturalWidth || !preview.naturalHeight) throw new Error('无法读取图片');
+    objectURLs.add(image);
+    const item = { id: crypto.randomUUID(), category: uploadCategory, name: file.name.replace(/\.[^.]+$/, '').slice(0, 20), image, file: normalized, prompt: categoryPrompts[uploadCategory] };
+    wardrobe.unshift(item); category = uploadCategory; selectItem(item); categoryScroll.set(category, 0); renderWardrobe(); notice('');
+  } catch {
+    URL.revokeObjectURL(image); notice('图片无法读取，请换一张 JPG、PNG 或 WebP 图片。', true);
+  } finally {
+    button.disabled = false; button.removeAttribute('aria-busy'); button.querySelector('span').textContent = '上传衣服';
+  }
 };
 $('#close-dialog').onclick = () => $('#phone-dialog').close();
 $('#phone-dialog').onclick = event => { if (event.target === $('#phone-dialog')) $('#phone-dialog').close(); };
